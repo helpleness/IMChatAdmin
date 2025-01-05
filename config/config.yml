@@ -1,0 +1,28 @@
+mysql:
+  host: 192.168.137.129
+  port: 3306
+  username: root
+  password: 775345
+  database: User_Information
+minio:
+  endpoint: 192.168.137.129:9000
+  accessID: 4BdCx4u9PTIgzd0i2uLA
+  accessKey: MJlxPe5hTyB1thHWwOqFRjJTsLuCIp11ONuuwuHa
+  bucket: gwq
+  access1ID: DIqPKbAVO8vAzm3YbQee
+  access2Key: oPQFd4oQwALsiiVHtm6yvcYsmlQmDRHuilRhU5vW
+  bucket1: gwq
+
+#service
+server:
+  port: 8088
+
+websocket:
+  ip: 127.0.0.1 #运行部署要换成公网ip
+  port: 8089
+  rpcPort: 8090
+
+redis:
+  masteraddr: 192.168.137.129:6379
+  password: 775345
+  DB: 0
