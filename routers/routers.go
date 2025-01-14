@@ -16,5 +16,9 @@ func Collectrouters(r *gin.Engine) *gin.Engine {
 	r.GET("/userinfo", middleware.AuthMiddleWare(), controller.Userinfo)
 	r.POST("/upload", middleware.AuthMiddleWare(), controller.UploadFile)
 	r.GET("/download", middleware.AuthMiddleWare(), controller.DownloadFile)
+	r.POST("/", middleware.AuthMiddleWare(), controller.FriendAdd)
+	r.POST("/", middleware.AuthMiddleWare(), controller.GroupCreated)
+	r.POST("/", middleware.AuthMiddleWare(), controller.GroupAdd)
+	r.POST("/", middleware.AuthMiddleWare(), controller.GroupApplication)
 	return r
 }

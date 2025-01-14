@@ -15,11 +15,11 @@ type User struct {
 // 定义 Friends 结构体，好友关系表
 type Friends struct {
 	UserID    int       `gorm:"primaryKey;not null"`
-	FriendID  int       `gorm:"primaryKey;not null"`
+	FriendID  int       `gorm:"not null;uniqueIndex:idx_user_friend"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
-	// 设置外键关联
-	User   User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE;"`
-	Friend User `gorm:"foreignKey:FriendID;constraint:OnDelete:CASCADE;"`
+
+	User   User `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	Friend User `gorm:"foreignKey:FriendID;constraint:OnDelete:CASCADE"`
 }
 
 // Group 表示群聊的基本信息
@@ -40,6 +40,9 @@ type GroupMember struct {
 	Role     string    `gorm:"type:varchar(20);not null"` // 成员角色，例如 "owner", "admin", "member"
 }
 
+// 好友/群聊加入申请
+// 群聊创建
+// 持久化 发送给暂时不在线用户的消息
 type HeartBeat struct {
 	UserID string `json:"userID,omitempty"`
 }

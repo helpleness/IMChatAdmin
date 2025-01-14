@@ -101,10 +101,11 @@ func Login(ctx *gin.Context) {
 		},
 		"msg": "login success",
 	})
+	go PushMessage(ctx, user)
 	return
 }
 
-// 查找用户名是否存在的函数。
+// 查找用户名是否存在的函数
 func isUserExits(db *gorm.DB, username string) bool {
 	var user model.User
 	db.Table("users").Where("username = ?", username).First(&user)
