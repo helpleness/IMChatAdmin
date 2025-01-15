@@ -8,8 +8,32 @@ import (
 // 结构体，登录注册，初始化创建表单调用
 type User struct {
 	gorm.Model
-	Username string `gorm:"unique"`
-	Password string `gorm:"size:512"` //哈希加密
+	Username  string `gorm:"unique"`
+	Password  string `gorm:"size:512"`          //哈希加密
+	AvatarURL string `gorm:"type:varchar(255)"` // 头像URL
+}
+
+// MessageType 描述系统中不同类型的消息
+type MessageType int
+
+const (
+	TEXT           MessageType = iota // 文本消息
+	IMAGE                             // 图片消息
+	FILE                              // 文件消息
+	FRIEND_REQUEST                    // 好友请求
+	GROUP_INVITE                      // 群组邀请
+	ONLINE_STATUS                     // 在线状态更新
+)
+
+// MyMessage 聊天消息结构
+type MyMessage struct {
+	gorm.Model
+	MessageID  string      `gorm:"primaryKey;type:varchar(36)"` // 消息唯一标识
+	UserFrom   string      `gorm:"type:varchar(36);not null"`   // 发送者用户ID
+	SendTarget string      `gorm:"type:varchar(36);not null"`   // 接收者用户ID或群组ID
+	Content    string      `gorm:"type:text"`                   // 消息内容
+	Type       MessageType `gorm:"type:int"`                    // 消息类型
+	SendTime   time.Time   `gorm:"type:bigint"`                 // 发送时间（Unix时间戳）
 }
 
 // 定义 Friends 结构体，好友关系表

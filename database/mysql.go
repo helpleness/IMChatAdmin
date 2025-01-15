@@ -33,6 +33,7 @@ func InitMysql() *gorm.DB {
 	db.AutoMigrate(&model.Friends{})
 	db.AutoMigrate(&model.Group{})
 	db.AutoMigrate(&model.GroupMember{})
+	db.AutoMigrate(&model.MyMessage{})
 	DB = db
 	return db
 }
