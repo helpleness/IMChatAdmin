@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"github.com/helpleness/IMChatAdmin/model"
+	"github.com/helpleness/IMChatAdmin/model/request"
 	"github.com/spf13/viper"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -34,6 +35,8 @@ func InitMysql() *gorm.DB {
 	db.AutoMigrate(&model.Group{})
 	db.AutoMigrate(&model.GroupMember{})
 	db.AutoMigrate(&model.MyMessage{})
+	db.AutoMigrate(&request.FriendAdd{})
+	db.AutoMigrate(&request.GroupApplication{})
 	DB = db
 	return db
 }
@@ -41,16 +44,4 @@ func InitMysql() *gorm.DB {
 // 返回DB的函数
 func GetDB() *gorm.DB {
 	return DB
-}
-
-// 将好友关系存储到 MySQL 数据库中
-func AddFriendToDatabase(userFrom string, userTarget string) error {
-	// 这里可以根据实际情况进行 MySQL 数据库操作
-	// 假设数据库中有一个 friends 表，存储好友关系
-	//query := "INSERT INTO friends (user_from, user_target) VALUES (?, ?)"
-	// 执行数据库插入操作...
-	// db.Exec(query, userFrom, userTarget)
-
-	fmt.Printf("Added %s and %s as friends to the database\n", userFrom, userTarget)
-	return nil
 }
