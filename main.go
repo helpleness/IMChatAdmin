@@ -5,6 +5,7 @@ import (
 	"github.com/helpleness/IMChatAdmin/config"
 	"github.com/helpleness/IMChatAdmin/database"
 	"github.com/helpleness/IMChatAdmin/routers"
+	"github.com/helpleness/IMChatAdmin/utils"
 	"github.com/spf13/viper"
 )
 
@@ -24,6 +25,10 @@ func main() {
 
 	//获取运行端口
 	port := viper.GetString("server.port")
+
+	//初始化协程池，进行过期数据删除任务
+	utils.InitPoll()
+
 	//如果端口不为空就加上端口运行
 	if port != "" {
 		panic(r.Run(":" + port))

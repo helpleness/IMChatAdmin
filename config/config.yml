@@ -1,16 +1,16 @@
 mysql:
-  host: 192.168.137.129
+  host: 154.12.41.116
   port: 3306
   username: root
   password: 775345
   database: User_Information
 minio:
-  endpoint: 192.168.137.129:9000
-  accessID: 4BdCx4u9PTIgzd0i2uLA
-  accessKey: MJlxPe5hTyB1thHWwOqFRjJTsLuCIp11ONuuwuHa
+  endpoint: 154.12.41.116:9000
+  access1ID: 4BdCx4u9PTIgzd0i2uLA
+  access2Key: MJlxPe5hTyB1thHWwOqFRjJTsLuCIp11ONuuwuHa
   bucket: gwq
-  access1ID: DIqPKbAVO8vAzm3YbQee
-  access2Key: oPQFd4oQwALsiiVHtm6yvcYsmlQmDRHuilRhU5vW
+  accessID: DIqPKbAVO8vAzm3YbQee
+  accessKey: oPQFd4oQwALsiiVHtm6yvcYsmlQmDRHuilRhU5vW
   bucket1: gwq
 
 #service
@@ -23,6 +23,6 @@ websocket:
   rpcPort: 8090
 
 redis:
-  masteraddr: 192.168.137.129:6379
+  masteraddr: 154.12.41.116:6379
   password: 775345
   DB: 0

@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"github.com/gin-gonic/gin"
 	"github.com/helpleness/IMChatAdmin/controller"
 	"github.com/panjf2000/ants/v2"
 	"github.com/robfig/cron/v3"
@@ -9,7 +8,7 @@ import (
 	"time"
 )
 
-func InitPoll(ctx *gin.Context) {
+func InitPoll() {
 
 	// 创建一个 ants 池
 	p, _ := ants.NewPool(10, ants.WithExpiryDuration(5*time.Second))
@@ -21,7 +20,10 @@ func InitPoll(ctx *gin.Context) {
 	// 添加定时任务，每小时执行一次
 	_, err := c.AddFunc("@hourly", func() {
 		_ = p.Submit(func() {
-			controller.DeleteExpiredGroupApplications(ctx)
+			controller.DeleteExpiredGroupApplications()
+		})
+		_ = p.Submit(func() {
+			controller.DeleteExpiredFriendAdds()
 		})
 	})
 	if err != nil {
