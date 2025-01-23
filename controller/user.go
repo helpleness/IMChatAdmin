@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"github.com/gin-gonic/gin"
 	"github.com/helpleness/IMChatAdmin/database"
 	"github.com/helpleness/IMChatAdmin/middleware"
@@ -8,7 +9,10 @@ import (
 	"github.com/helpleness/IMChatAdmin/response"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"log"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 // 注册函数
@@ -43,6 +47,12 @@ func Register(ctx *gin.Context) {
 	}
 	//把用户信息写入数据库中
 	DB.Create(&newUser)
+	redisCli := database.GetRedisClient()
+	cacheKey := "user:" + strconv.Itoa(int(newUser.ID))
+	userCacheMarshal, _ := json.Marshal(newUser)
+	if err := redisCli.Set(ctx, cacheKey, userCacheMarshal, 7*24*time.Hour).Err(); err != nil {
+		log.Printf("Error caching user: %v", err)
+	}
 	//写入成功。注册成功。
 	var user model.User
 	DB.Table("users").Where("username = ?", username).First(&user)
