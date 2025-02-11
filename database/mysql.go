@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"github.com/helpleness/IMChatAdmin/model"
 	"github.com/spf13/viper"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -30,7 +31,7 @@ func InitMysql() *gorm.DB {
 	//db.AutoMigrate(&model.User{})
 	//db.AutoMigrate(&model.File{})
 	//db.AutoMigrate(&model.Friends{})
-	//db.AutoMigrate(&model.Group{})
+	db.AutoMigrate(&model.Group{})
 	//db.AutoMigrate(&model.GroupMember{})
 	//db.AutoMigrate(&model.MyMessage{})
 	//db.AutoMigrate(&request.FriendAdd{})

@@ -57,7 +57,7 @@ func PushMessage(ctx context.Context, user model.User) {
 
 }
 
-// 好友添加和处理
+// 旁路缓存好友添加和处理
 func FriendAdd(ctx *gin.Context) {
 	var req request.FriendAdd
 	if err := ctx.ShouldBindJSON(&req); err != nil {
