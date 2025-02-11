@@ -241,7 +241,7 @@ func GroupAdd(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "Group join request sent successfully"})
 }
 
-// 添加用户到群组的请求
+// 旁路缓存添加用户到群组的请求
 func GroupAddRedis(ctx *gin.Context) {
 	var req request.GroupAdd
 	if err := ctx.ShouldBindJSON(&req); err != nil {

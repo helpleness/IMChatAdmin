@@ -23,6 +23,6 @@ websocket:
   rpcPort: 8090
 
 redis:
-  masteraddr: 154.12.41.116:6379
+  masteraddr: 154.12.41.116:63791
   password: 775345
   DB: 0
