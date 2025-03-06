@@ -132,7 +132,7 @@ func GroupCreated(ctx *gin.Context) {
 	redisCli := database.GetRedisClient()
 	cacheKey := "group:" + group.GroupID
 	groupMarshal, _ := json.Marshal(group)
-	if err := redisCli.Set(ctx, cacheKey, groupMarshal, 7*24*time.Hour).Err(); err != nil {
+	if err := redisCli.Set(ctx, cacheKey, groupMarshal, 1*time.Hour).Err(); err != nil {
 		log.Printf("Error caching group: %v", err)
 	}
 
@@ -149,19 +149,19 @@ func GroupCreated(ctx *gin.Context) {
 	// 缓存群主信息
 	cacheKey = "group_member:" + groupMember.GroupID
 	groupMemberMarshal, _ := json.Marshal(groupMember)
-	if err := redisCli.LPush(ctx, cacheKey, groupMemberMarshal, 7*24*time.Hour).Err(); err != nil {
+	if err := redisCli.LPush(ctx, cacheKey, groupMemberMarshal).Err(); err != nil {
+		log.Printf("Error caching group member: %v", err)
+	}
+	err = redisCli.Expire(ctx, cacheKey, 7*24/time.Hour).Err()
+	if err != nil {
 		log.Printf("Error caching group member: %v", err)
 	}
 
 	// 添加初始成员
 	for _, memberID := range req.InitialMembers {
-		var member model.User
-		if result := db.First(&member, memberID); result.Error != nil {
-			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-				ctx.JSON(http.StatusNotFound, gin.H{"error": "Member not found"})
-				return
-			}
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		err := isuserexist(ctx, memberID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err})
 			return
 		}
 
@@ -177,7 +177,11 @@ func GroupCreated(ctx *gin.Context) {
 		// 缓存成员信息
 		cacheKey = "group_member:" + groupMember.GroupID
 		groupMemberMarshal, _ := json.Marshal(groupMember)
-		if err := redisCli.LPush(ctx, cacheKey, groupMemberMarshal, 7*24*time.Hour).Err(); err != nil {
+		if err := redisCli.LPush(ctx, cacheKey, groupMemberMarshal).Err(); err != nil {
+			log.Printf("Error caching group member: %v", err)
+		}
+		err = redisCli.Expire(ctx, cacheKey, 7*24/time.Hour).Err()
+		if err != nil {
 			log.Printf("Error caching group member: %v", err)
 		}
 	}
@@ -317,7 +321,10 @@ func GroupAddRedis(ctx *gin.Context) {
 	if err := redisCli.LPush(ctx, cacheKey, groupMemberMarshal).Err(); err != nil {
 		log.Printf("Error caching group member: %v", err)
 	}
-
+	err = redisCli.Expire(ctx, cacheKey, 7*24/time.Hour).Err()
+	if err != nil {
+		log.Printf("Error caching group member: %v", err)
+	}
 	// 假设申请已发送
 	ctx.JSON(http.StatusOK, gin.H{"message": "Group join request sent successfully"})
 }
@@ -433,10 +440,13 @@ func GroupApplicationRedis(ctx *gin.Context) {
 
 	// 缓存申请信息
 	applicationCacheMarshal, _ := json.Marshal(req)
-	if err := redisCli.LPush(ctx, cacheKey, applicationCacheMarshal, 7*24*time.Hour).Err(); err != nil {
+	if err := redisCli.LPush(ctx, cacheKey, applicationCacheMarshal).Err(); err != nil {
 		log.Printf("Error caching application: %v", err)
 	}
-
+	err = redisCli.Expire(ctx, cacheKey, 7*24/time.Hour).Err()
+	if err != nil {
+		log.Printf("Error caching group member: %v", err)
+	}
 	// 假设申请已发送
 	ctx.JSON(http.StatusOK, gin.H{"message": "Group application sent successfully"})
 }
@@ -512,6 +522,67 @@ func isuserexist(ctx *gin.Context, UserID int) error {
 	return nil
 }
 
+// IsGroupMember 检查用户是否是群组成员
+func IsGroupMember(ctx *gin.Context, userID int, groupID int) (bool, error) {
+	db := database.GetDB()
+	redisCli := database.GetRedisClient()
+
+	// 先从 Redis 缓存中查询
+	memberCacheKey := "group_member:" + strconv.Itoa(groupID)
+	cachedMembers, err := redisCli.LRange(ctx, memberCacheKey, 0, -1).Result()
+
+	if err == nil && len(cachedMembers) > 0 {
+		// 缓存中有数据，遍历查找
+		for _, memberJSON := range cachedMembers {
+			var member model.GroupMember
+			if err := json.Unmarshal([]byte(memberJSON), &member); err != nil {
+				log.Printf("解析群组成员缓存错误: %v", err)
+				continue
+			}
+
+			if member.UserID == userID {
+				return true, nil
+			}
+		}
+	}
+
+	// 缓存中未找到或发生错误，从数据库查询
+	var count int64
+	result := db.Table("group_members").
+		Where("group_id = ? AND user_id = ?", strconv.Itoa(groupID), userID).
+		Count(&count)
+
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	// 如果找到记录，将结果缓存到 Redis
+	if count > 0 && (err != nil || len(cachedMembers) == 0) {
+		// 从数据库查询所有成员并缓存
+		var members []model.GroupMember
+		if err := db.Table("group_members").Where("group_id = ?", strconv.Itoa(groupID)).Find(&members).Error; err != nil {
+			log.Printf("查询群组成员错误: %v", err)
+		} else {
+			// 清除旧缓存
+			redisCli.Del(ctx, memberCacheKey)
+
+			// 缓存所有成员
+			pipe := redisCli.Pipeline()
+			for _, member := range members {
+				memberJSON, _ := json.Marshal(member)
+				pipe.LPush(ctx, memberCacheKey, memberJSON)
+			}
+			pipe.Expire(ctx, memberCacheKey, 7*24*time.Hour)
+			if _, err := pipe.Exec(ctx); err != nil {
+				log.Printf("缓存群组成员错误: %v", err)
+			}
+		}
+	}
+
+	return count > 0, nil
+}
+
+// IsFriends 检查两个用户是否已经是好友关系
 // IsFriends 检查两个用户是否已经是好友关系
 func IsFriends(ctx *gin.Context, userID, friendID int) (bool, error) {
 	db := database.GetDB()
@@ -522,35 +593,58 @@ func IsFriends(ctx *gin.Context, userID, friendID int) (bool, error) {
 
 	// 尝试从缓存中获取好友列表
 	friendshipCaches, err := redisCli.LRange(ctx, cacheKey, 0, -1).Result()
-	if err == nil {
+	if err == nil && len(friendshipCaches) > 0 {
 		// 缓存命中，解析缓存数据
 		for _, friendshipCache := range friendshipCaches {
 			var friendship model.Friends
 			if err := json.Unmarshal([]byte(friendshipCache), &friendship); err != nil {
-				log.Printf("Error unmarshalling friendship from cache: %v", err)
+				log.Printf("解析好友关系缓存错误: %v", err)
 				continue
 			}
 			if friendship.FriendID == friendID {
 				return true, nil
 			}
 		}
-	}
-
-	// 缓存未命中，从数据库中查询
-	var friendship model.Friends
-	if result := db.Table("friends").Where("user_id = ? AND friend_id = ?", userID, friendID).First(&friendship).Error; result != nil {
-		if !errors.Is(result, gorm.ErrRecordNotFound) {
-			log.Printf("Error fetching friendship from database: %v", result)
-			return false, result
-		}
-		// 如果记录不存在，返回 false
+		// 如果缓存中存在好友列表但未找到特定好友，可以认为不是好友
 		return false, nil
 	}
 
-	// 缓存好友关系
-	friendshipCache, _ := json.Marshal(friendship)
-	if err := redisCli.LPush(ctx, cacheKey, friendshipCache).Err(); err != nil {
-		log.Printf("Error caching friendship: %v", err)
+	// 缓存未命中或发生错误，从数据库中查询
+	var count int64
+	if result := db.Table("friends").Where("user_id = ? AND friend_id = ?", userID, friendID).Count(&count); result.Error != nil {
+		log.Printf("从数据库查询好友关系错误: %v", result.Error)
+		return false, result.Error
+	}
+
+	// 如果数据库中没有找到记录，则不是好友
+	if count == 0 {
+		return false, nil
+	}
+
+	// 如果找到记录但缓存不存在或为空，则刷新缓存
+	if err != nil || len(friendshipCaches) == 0 {
+		var friendships []model.Friends
+		if err := db.Table("friends").Where("user_id = ?", userID).Find(&friendships).Error; err != nil {
+			log.Printf("查询用户好友列表错误: %v", err)
+			// 虽然查询好友列表失败，但我们已经确认了这两个用户是好友
+			return true, nil
+		}
+
+		// 清除旧缓存
+		if err := redisCli.Del(ctx, cacheKey).Err(); err != nil {
+			log.Printf("清除好友关系缓存错误: %v", err)
+		}
+
+		// 缓存所有好友关系
+		pipe := redisCli.Pipeline()
+		for _, fs := range friendships {
+			friendshipCache, _ := json.Marshal(fs)
+			pipe.LPush(ctx, cacheKey, friendshipCache)
+		}
+		pipe.Expire(ctx, cacheKey, 7*24*time.Hour) // 设置7天过期
+		if _, err := pipe.Exec(ctx); err != nil {
+			log.Printf("缓存好友关系错误: %v", err)
+		}
 	}
 
 	return true, nil
@@ -603,7 +697,7 @@ func GetGroup(ctx *gin.Context, UserID int) (error, []model.Group) {
 		// 缓存群组信息
 		for _, group := range groups {
 			groupCache, _ := json.Marshal(group)
-			if err := redisCli.RPush(ctx, cacheKey, groupCache).Err(); err != nil {
+			if err := redisCli.LPush(ctx, cacheKey, groupCache).Err(); err != nil {
 				log.Printf("Error caching group: %v", err)
 			}
 		}
@@ -684,7 +778,7 @@ func GetPendingGroupApplications(ctx *gin.Context, UserID int) (error, []request
 		// 缓存群组申请信息
 		for _, application := range applications {
 			applicationCache, _ := json.Marshal(application)
-			if err := redisCli.RPush(ctx, cacheKey, applicationCache).Err(); err != nil {
+			if err := redisCli.LPush(ctx, cacheKey, applicationCache).Err(); err != nil {
 				log.Printf("Error caching group application: %v", err)
 			}
 		}

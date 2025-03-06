@@ -42,7 +42,7 @@ func QueryAllActiveFriendAdds(ctx *gin.Context) {
 	}
 	var friendAdds []request.FriendAdd
 	fmt.Println("Redis Cache Data:", friendAddCaches) // 打印缓存数据，看看是否为空
-	if err == nil {
+	if err == nil && errors.Is(err, redis.Nil) {
 		// 缓存命中，解析缓存数据
 		for _, friendAddCache := range friendAddCaches {
 			fmt.Println("Redis Cache Data:", friendAddCache) // 打印缓存数据，看看是否为空

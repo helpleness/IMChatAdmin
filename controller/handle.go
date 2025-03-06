@@ -99,8 +99,8 @@ func HandleFriendAdd(ctx *gin.Context) {
 	friendshipCacheKey := "friendship:" + strconv.Itoa(req.UserID)
 	friendshipCache, _ := json.Marshal(friendship1)
 	pipe := redisCli.Pipeline()
-	pipe.LPush(ctx, cacheKey, friendshipCache)
-	pipe.Expire(ctx, cacheKey, 7*24*time.Hour)
+	pipe.LPush(ctx, friendshipCacheKey, friendshipCache)
+	pipe.Expire(ctx, friendshipCacheKey, 7*24*time.Hour)
 	if _, err := pipe.Exec(ctx); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err})
 		log.Printf("Error caching friend request with expiration: %v", err)
@@ -119,14 +119,20 @@ func HandleFriendAdd(ctx *gin.Context) {
 
 	friendshipCacheKey = "friendship:" + strconv.Itoa(req.FriendID)
 	friendshipCache, _ = json.Marshal(friendship2)
-	if err := redisCli.LPush(ctx, friendshipCacheKey, friendshipCache).Err(); err != nil {
-		log.Printf("Error caching friendship: %v", err)
+
+	pipe = redisCli.Pipeline()
+	pipe.LPush(ctx, friendshipCacheKey, friendshipCache)
+	pipe.Expire(ctx, friendshipCacheKey, 7*24*time.Hour)
+	if _, err := pipe.Exec(ctx); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		log.Printf("Error caching friend request with expiration: %v", err)
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Request handled successfully"})
 }
 
 // 处理群组申请
+// HandleGroupApplication 处理群组申请
 func HandleGroupApplication(ctx *gin.Context) {
 	var req request.GroupApplication
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -136,30 +142,84 @@ func HandleGroupApplication(ctx *gin.Context) {
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
 
-	err, group := isgroupexist(ctx, req.GroupID)
+	// 检查用户是否存在
+	err := isuserexist(ctx, req.UserID)
 	if err != nil {
+		ctx.JSON(200, gin.H{"error": "userid err"})
 		return
 	}
+
+	// 检查群组是否存在
+	err, group := isgroupexist(ctx, req.GroupID)
+	if err != nil {
+		ctx.JSON(200, gin.H{"error": "groupid err"})
+		return
+	}
+
+	// 检查用户是否已经是群组成员
+	isMember, err := IsGroupMember(ctx, req.UserID, req.GroupID)
+	if err != nil {
+		ctx.JSON(200, gin.H{"error": "group member check err"})
+		return
+	}
+	if isMember {
+		ctx.JSON(200, gin.H{"msg": "user already in group"})
+		return
+	}
+
 	// 更新请求状态
 	req.Status = request.Accepted // 或 request.Rejected
-	if result := db.Save(&req).Error; result != nil {
+
+	// 从数据库中获取当前记录
+	var currentReq request.GroupApplication
+	if result := db.Where("user_id = ? AND group_id = ?", req.UserID, req.GroupID).First(&currentReq).Error; result != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
 		return
 	}
 
-	// 删除缓存中的群组申请
+	// 只更新 Status 字段
+	currentReq.Status = req.Status
+	if result := db.Save(&currentReq).Error; result != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
+		return
+	}
+
+	// 缓存键
 	cacheKey := "group_application:" + strconv.Itoa(group.OwnerID)
-	if _, err := redisCli.Del(ctx, cacheKey).Result(); err != nil {
-		log.Printf("Error deleting group application from cache: %v", err)
+
+	// 获取缓存中的所有群组申请
+	originalRequests, err := redisCli.LRange(ctx, cacheKey, 0, -1).Result()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		log.Printf("获取原始群组申请缓存错误: %v", err)
+	}
+
+	// 找到并删除匹配的原始群组申请
+	for _, originalRequest := range originalRequests {
+		var originalReq request.GroupApplication
+		if err := json.Unmarshal([]byte(originalRequest), &originalReq); err != nil {
+			log.Printf("解析原始群组申请错误: %v", err)
+			continue
+		}
+
+		// 检查是否是需要删除的请求
+		if originalReq.UserID == req.UserID && originalReq.GroupID == req.GroupID {
+			// 删除匹配的原始请求
+			if _, err := redisCli.LRem(ctx, cacheKey, 0, originalRequest).Result(); err != nil {
+				log.Printf("从缓存中删除群组申请错误: %v", err)
+			}
+			break
+		}
 	}
 
 	// 将群组成员关系添加到数据库
 	groupMember := model.GroupMember{
-		GroupID: strconv.Itoa(req.GroupID),
-		UserID:  req.UserID,
-		Role:    "member",
+		GroupID:  strconv.Itoa(req.GroupID),
+		UserID:   req.UserID,
+		Role:     "member",
+		JoinTime: time.Now(),
 	}
-	if result := db.Create(&groupMember).Error; result != nil {
+	if result := db.Table("group_members").Create(&groupMember).Error; result != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
 		return
 	}
@@ -167,11 +227,22 @@ func HandleGroupApplication(ctx *gin.Context) {
 	// 将群组成员关系缓存到 Redis
 	memberCacheKey := "group_member:" + strconv.Itoa(req.GroupID)
 	memberCache, _ := json.Marshal(groupMember)
-	if err := redisCli.LPush(ctx, memberCacheKey, memberCache).Err(); err != nil {
-		log.Printf("Error caching group member: %v", err)
+
+	pipe := redisCli.Pipeline()
+	pipe.LPush(ctx, memberCacheKey, memberCache)
+	pipe.Expire(ctx, memberCacheKey, 7*24*time.Hour)
+	if _, err := pipe.Exec(ctx); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		log.Printf("缓存群组成员关系错误: %v", err)
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "Request handled successfully"})
+	// 更新用户的群组列表缓存
+	userGroupCacheKey := "groupList:" + strconv.Itoa(req.UserID)
+	if _, err := redisCli.Del(ctx, userGroupCacheKey).Result(); err != nil {
+		log.Printf("删除用户群组缓存错误: %v", err)
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "群组申请处理成功"})
 }
 
 // 删除过期的 FriendAdd 请求
