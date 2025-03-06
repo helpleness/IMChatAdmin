@@ -31,5 +31,7 @@ func Collectrouters(r *gin.Engine) *gin.Engine {
 	r.POST("/handleGroupApplication", middleware.AuthMiddleWare(), controller.HandleGroupApplication)        // 处理群组申请
 	r.GET("/deleteFriendAddByID", middleware.AuthMiddleWare(), controller.DeleteFriendAddByID)               // 删除指定 ID 的加好友请求 // 每次获取加好友列表时调用这个接口查看其是否过期删除
 	r.GET("/deleteGroupApplicationByID", middleware.AuthMiddleWare(), controller.DeleteGroupApplicationByID) // 删除指定 ID 的加入群聊请求 // 每次获取加群聊列表时调用这个接口查看其是否过期删除
+	r.GET("/groups", middleware.AuthMiddleWare(), controller.GetGroupHandler)
+	r.GET("/friends", middleware.AuthMiddleWare(), controller.GetFriendsHandler)
 	return r
 }

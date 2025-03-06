@@ -739,65 +739,65 @@ func IsFriends(ctx *gin.Context, userID, friendID int) (bool, error) {
 	return true, nil
 }
 
-// GetGroup 获取用户已经加入的群组列表
-func GetGroup(ctx *gin.Context, UserID int) (error, []model.Group) {
-	db := database.GetDB()
-	redisCli := database.GetRedisClient()
-
-	// 缓存键
-	cacheKey := "groupList:" + strconv.Itoa(UserID)
-
-	// 尝试从缓存中获取数据
-	groupCaches, err := redisCli.LRange(ctx, cacheKey, 0, -1).Result()
-	var groups []model.Group
-
-	if err == nil {
-		// 缓存命中，解析缓存数据
-		for _, groupCache := range groupCaches {
-			var group model.Group
-			if err := json.Unmarshal([]byte(groupCache), &group); err != nil {
-				log.Printf("Error unmarshalling group from cache: %v", err)
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling group from cache"})
-				return err, groups
-			}
-			groups = append(groups, group)
-		}
-	} else {
-		// 缓存未命中，从数据库中查询
-		var userGroups []model.GroupMember
-		if result := db.Where("user_id = ?", UserID).Find(&userGroups); result.Error != nil {
-			log.Printf("Error fetching user groups from database: %v", result.Error)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching user groups from database"})
-			return result.Error, groups
-		}
-
-		// 获取群组信息
-		groupIDs := make([]string, len(userGroups))
-		for i, ug := range userGroups {
-			groupIDs[i] = strconv.Itoa(ug.GroupID)
-		}
-
-		if result := db.Where("group_id IN ?", groupIDs).Find(&groups); result.Error != nil {
-			log.Printf("Error fetching groups from database: %v", result.Error)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching groups from database"})
-			return result.Error, groups
-		}
-
-		// 缓存群组信息
-		for _, group := range groups {
-			groupCache, _ := json.Marshal(group)
-			if err := redisCli.LPush(ctx, cacheKey, groupCache).Err(); err != nil {
-				log.Printf("Error caching group: %v", err)
-			}
-		}
-		// 设置缓存过期时间
-		if err := redisCli.Expire(ctx, cacheKey, 7*24*time.Hour).Err(); err != nil {
-			log.Printf("Error setting cache expiration: %v", err)
-		}
-	}
-
-	return nil, groups
-}
+//// GetGroup 获取用户已经加入的群组列表
+//func GetGroup(ctx *gin.Context, UserID int) (error, []model.Group) {
+//	db := database.GetDB()
+//	redisCli := database.GetRedisClient()
+//
+//	// 缓存键
+//	cacheKey := "groupList:" + strconv.Itoa(UserID)
+//
+//	// 尝试从缓存中获取数据
+//	groupCaches, err := redisCli.LRange(ctx, cacheKey, 0, -1).Result()
+//	var groups []model.Group
+//
+//	if err == nil {
+//		// 缓存命中，解析缓存数据
+//		for _, groupCache := range groupCaches {
+//			var group model.Group
+//			if err := json.Unmarshal([]byte(groupCache), &group); err != nil {
+//				log.Printf("Error unmarshalling group from cache: %v", err)
+//				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling group from cache"})
+//				return err, groups
+//			}
+//			groups = append(groups, group)
+//		}
+//	} else {
+//		// 缓存未命中，从数据库中查询
+//		var userGroups []model.GroupMember
+//		if result := db.Where("user_id = ?", UserID).Find(&userGroups); result.Error != nil {
+//			log.Printf("Error fetching user groups from database: %v", result.Error)
+//			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching user groups from database"})
+//			return result.Error, groups
+//		}
+//
+//		// 获取群组信息
+//		groupIDs := make([]string, len(userGroups))
+//		for i, ug := range userGroups {
+//			groupIDs[i] = strconv.Itoa(ug.GroupID)
+//		}
+//
+//		if result := db.Where("group_id IN ?", groupIDs).Find(&groups); result.Error != nil {
+//			log.Printf("Error fetching groups from database: %v", result.Error)
+//			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching groups from database"})
+//			return result.Error, groups
+//		}
+//
+//		// 缓存群组信息
+//		for _, group := range groups {
+//			groupCache, _ := json.Marshal(group)
+//			if err := redisCli.LPush(ctx, cacheKey, groupCache).Err(); err != nil {
+//				log.Printf("Error caching group: %v", err)
+//			}
+//		}
+//		// 设置缓存过期时间
+//		if err := redisCli.Expire(ctx, cacheKey, 7*24*time.Hour).Err(); err != nil {
+//			log.Printf("Error setting cache expiration: %v", err)
+//		}
+//	}
+//
+//	return nil, groups
+//}
 
 // GetPendingGroupApplications 获取群主和管理员收到的待处理群组申请信息列表
 func GetPendingGroupApplications(ctx *gin.Context, UserID int) (error, []request.GroupApplication) {
