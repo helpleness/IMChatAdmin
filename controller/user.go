@@ -112,6 +112,13 @@ func Login(ctx *gin.Context) {
 		"msg": "login success",
 	})
 	go PushMessage(ctx, user)
+	redisCli := database.GetRedisClient()
+	// 查找数据库中是否存在用户
+	cacheKey := "user:" + strconv.Itoa(int(user.ID))
+	userCache, _ := json.Marshal(user)
+	if err := redisCli.Set(ctx, cacheKey, userCache, 7*24*time.Hour).Err(); err != nil {
+		log.Printf("Error caching group: %v", err)
+	}
 	return
 }
 

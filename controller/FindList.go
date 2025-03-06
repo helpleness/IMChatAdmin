@@ -3,6 +3,7 @@ package controller
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/helpleness/IMChatAdmin/database"
 	"github.com/helpleness/IMChatAdmin/model/request"
@@ -23,24 +24,28 @@ func QueryAllActiveFriendAdds(ctx *gin.Context) {
 		return
 	}
 
+	// 缓存键
+	cacheKey := "friend_request:" + userID
 	// 将字符串转换为整数
 	userIDInt, err := strconv.Atoi(userID)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid User ID"})
 		return
 	}
-
-	// 缓存键
-	cacheKey := "friend_requests:" + strconv.Itoa(userIDInt)
-
 	// 尝试从缓存中获取数据
 	redisCli := database.GetRedisClient()
-	friendAddCaches, err := redisCli.LRange(ctx, cacheKey, 0, -1).Result()
+	var friendAddCaches []string
+	friendAddCaches, err = redisCli.LRange(ctx, cacheKey, 0, -1).Result()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "获取cache错误"})
+		return
+	}
 	var friendAdds []request.FriendAdd
-
+	fmt.Println("Redis Cache Data:", friendAddCaches) // 打印缓存数据，看看是否为空
 	if err == nil {
 		// 缓存命中，解析缓存数据
 		for _, friendAddCache := range friendAddCaches {
+			fmt.Println("Redis Cache Data:", friendAddCache) // 打印缓存数据，看看是否为空
 			var friendAdd request.FriendAdd
 			if err := json.Unmarshal([]byte(friendAddCache), &friendAdd); err != nil {
 				log.Printf("Error unmarshalling friend add request from cache: %v", err)
@@ -49,16 +54,11 @@ func QueryAllActiveFriendAdds(ctx *gin.Context) {
 			}
 			friendAdds = append(friendAdds, friendAdd)
 		}
-	} else if err != redis.Nil {
-		// 缓存获取失败
-		log.Printf("Error getting friend add requests from cache: %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting friend add requests from cache"})
-		return
 	} else {
 		// 缓存未命中，从数据库中查询
 		db := database.GetDB()
 		// 查询所有未过期的请求
-		result := db.Where("user_id = ? AND status = ? AND created_at > ?", userIDInt, request.Pending, time.Now().Add(-7*24*time.Hour)).Find(&friendAdds)
+		result := db.Table("friend_adds").Where("user_id = ? AND status = ? AND created_at > ?", userIDInt, request.Pending, time.Now().Add(-7*24*time.Hour)).Find(&friendAdds)
 		if result.Error != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 			return
@@ -67,7 +67,7 @@ func QueryAllActiveFriendAdds(ctx *gin.Context) {
 		// 缓存查询结果
 		for _, friendAdd := range friendAdds {
 			friendAddCache, _ := json.Marshal(friendAdd)
-			if err := redisCli.RPush(ctx, cacheKey, friendAddCache).Err(); err != nil {
+			if err := redisCli.LPush(ctx, cacheKey, friendAddCache).Err(); err != nil {
 				log.Printf("Error caching friend add request: %v", err)
 			}
 		}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
-	"log"
 	"time"
 )
 
@@ -26,13 +25,13 @@ func InitClusterClient() *redis.Client {
 		DB:       0,          // 连接的database库
 		PoolSize: 100,        // 连接池
 	})
-	defer func(RedisClient *redis.Client) {
-		err := RedisClient.Close()
-		if err != nil {
-			log.Printf("err:%v", err)
-			panic(err)
-		}
-	}(RedisClient)
+	//defer func(RedisClient *redis.Client) {
+	//	err := RedisClient.Close()
+	//	if err != nil {
+	//		log.Printf("err:%v", err)
+	//		panic(err)
+	//	}
+	//}(RedisClient)
 	fmt.Printf("Connecting Redis : %v\n", masteraddr)
 
 	// go-redis库v8版本相关命令都需要传递context.Context参数,Background 返回一个非空的Context,它永远不会被取消，没有值，也没有期限。

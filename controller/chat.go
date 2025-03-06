@@ -86,9 +86,13 @@ func FriendAdd(ctx *gin.Context) {
 	redisCli := database.GetRedisClient()
 	cacheKey := "friend_request:" + strconv.Itoa(req.FriendID)
 	reqMarshal, _ := json.Marshal(req)
-	if err := redisCli.LPush(ctx, cacheKey, reqMarshal, 7*24*time.Hour).Err(); err != nil {
-		log.Printf("Error caching friend request: %v", err)
+	pipe := redisCli.Pipeline()
+	pipe.LPush(ctx, cacheKey, reqMarshal)
+	pipe.Expire(ctx, cacheKey, 7*24*time.Hour)
+	if _, err := pipe.Exec(ctx); err != nil {
+		log.Printf("Error caching friend request with expiration: %v", err)
 	}
+
 	// 假设我们已经处理了请求，并且添加成功
 	ctx.JSON(http.StatusOK, gin.H{"message": "Friend request sent successfully"})
 }
@@ -412,11 +416,6 @@ func GroupApplicationRedis(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling application from cache"})
 			return
 		}
-	} else if err != redis.Nil {
-		// 缓存获取失败
-		log.Printf("Error getting application from cache: %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting application from cache"})
-		return
 	} else {
 		// 缓存未命中，从数据库中查询
 		if result := db.Where("user_id = ? AND group_id = ?", req.UserID, req.GroupID).First(&existingApplication).Error; result == nil {
@@ -457,14 +456,9 @@ func isgroupexist(ctx *gin.Context, GroupID int) (error, model.Group) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling group from cache"})
 			return err, group
 		}
-	} else if err != redis.Nil {
-		// 缓存获取失败
-		log.Printf("Error getting group from cache: %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting group from cache"})
-		return err, group
 	} else {
 		// 缓存未命中，从数据库中查询
-		if result := db.Where("group_id =?", GroupID).First(&group); result.Error != nil {
+		if result := db.Table("users").Where("group_id =?", GroupID).First(&group); result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				ctx.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
 				return err, group
@@ -497,14 +491,9 @@ func isuserexist(ctx *gin.Context, UserID int) error {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling user from cache"})
 			return err
 		}
-	} else if err != redis.Nil {
-		// 缓存获取失败
-		log.Printf("Error getting user from cache: %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting user from cache"})
-		return err
 	} else {
 		// 缓存未命中，从数据库中查询
-		if result := db.Where("user_id =?", UserID).First(&user); result.Error != nil {
+		if result := db.Table("users").Where("id =?", UserID).First(&user); result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				ctx.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 				return err
@@ -545,15 +534,11 @@ func IsFriends(ctx *gin.Context, userID, friendID int) (bool, error) {
 				return true, nil
 			}
 		}
-	} else if err != redis.Nil {
-		// 缓存获取失败
-		log.Printf("Error getting friendship from cache: %v", err)
-		return false, err
 	}
 
 	// 缓存未命中，从数据库中查询
 	var friendship model.Friends
-	if result := db.Where("user_id = ? AND friend_id = ?", userID, friendID).First(&friendship).Error; result != nil {
+	if result := db.Table("friends").Where("user_id = ? AND friend_id = ?", userID, friendID).First(&friendship).Error; result != nil {
 		if !errors.Is(result, gorm.ErrRecordNotFound) {
 			log.Printf("Error fetching friendship from database: %v", result)
 			return false, result
@@ -594,11 +579,6 @@ func GetGroup(ctx *gin.Context, UserID int) (error, []model.Group) {
 			}
 			groups = append(groups, group)
 		}
-	} else if err != redis.Nil {
-		// 缓存获取失败
-		log.Printf("Error getting group list from cache: %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting group list from cache"})
-		return err, groups
 	} else {
 		// 缓存未命中，从数据库中查询
 		var userGroups []model.GroupMember
@@ -659,11 +639,6 @@ func GetPendingGroupApplications(ctx *gin.Context, UserID int) (error, []request
 			}
 			applications = append(applications, application)
 		}
-	} else if err != redis.Nil {
-		// 缓存获取失败
-		log.Printf("Error getting group applications from cache: %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error getting group applications from cache"})
-		return err, applications
 	} else {
 		// 缓存未命中，从数据库中查询
 		// 查询用户作为群主的所有群组

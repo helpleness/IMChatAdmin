@@ -26,33 +26,47 @@ func HandleFriendAdd(ctx *gin.Context) {
 	redisCli := database.GetRedisClient()
 	err := isuserexist(ctx, req.UserID)
 	if err != nil {
+		ctx.JSON(200, gin.H{"error": "userid err"})
 		return
 	}
 	err = isuserexist(ctx, req.FriendID)
 	if err != nil {
+		ctx.JSON(200, gin.H{"error": "friendid err"})
 		return
 	}
-	_, err = IsFriends(ctx, req.UserID, req.FriendID)
+	isfriendsexist, err := IsFriends(ctx, req.UserID, req.FriendID)
 	if err != nil {
+		ctx.JSON(200, gin.H{"error": "friend err"})
+		return
+	}
+	if isfriendsexist == true {
+		ctx.JSON(200, gin.H{"msg": "friend ship exist"})
 		return
 	}
 	// 更新请求状态
 	req.Status = request.Accepted // 或 request.Rejected
-	if result := db.Save(&req).Error; result != nil {
+	// 从数据库中获取当前记录
+	var currentReq request.FriendAdd
+	if result := db.Where("user_id = ? AND friend_id = ?", req.UserID, req.FriendID).First(&currentReq).Error; result != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
 		return
 	}
 
+	// 只更新 Status 字段
+	currentReq.Status = req.Status
+	if result := db.Save(&currentReq).Error; result != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
+		return
+	}
 	// 缓存键
 	cacheKey := "friend_request:" + strconv.Itoa(req.FriendID)
 
 	// 获取缓存中的所有好友申请
 	originalRequests, err := redisCli.LRange(ctx, cacheKey, 0, -1).Result()
 	if err != nil {
-		log.Printf("Error fetching friend requests from cache: %v", err)
-		return
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		log.Printf("Error cache original friend request: %v", err)
 	}
-
 	// 找到并删除匹配的原始好友申请
 	for _, originalRequest := range originalRequests {
 		var originalReq request.FriendAdd
@@ -70,14 +84,13 @@ func HandleFriendAdd(ctx *gin.Context) {
 			break
 		}
 	}
-
 	// 将好友关系添加到数据库
 	friendship1 := model.Friends{
 		UserID:    req.UserID,
 		FriendID:  req.FriendID,
 		CreatedAt: time.Now(),
 	}
-	if result := db.Create(&friendship1).Error; result != nil {
+	if result := db.Table("friends").Create(&friendship1).Error; result != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
 		return
 	}
@@ -85,8 +98,12 @@ func HandleFriendAdd(ctx *gin.Context) {
 	// 将好友关系缓存到 Redis
 	friendshipCacheKey := "friendship:" + strconv.Itoa(req.UserID)
 	friendshipCache, _ := json.Marshal(friendship1)
-	if err := redisCli.LPush(ctx, friendshipCacheKey, friendshipCache).Err(); err != nil {
-		log.Printf("Error caching friendship: %v", err)
+	pipe := redisCli.Pipeline()
+	pipe.LPush(ctx, cacheKey, friendshipCache)
+	pipe.Expire(ctx, cacheKey, 7*24*time.Hour)
+	if _, err := pipe.Exec(ctx); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		log.Printf("Error caching friend request with expiration: %v", err)
 	}
 
 	// 为对方也添加好友关系
@@ -95,7 +112,7 @@ func HandleFriendAdd(ctx *gin.Context) {
 		FriendID:  req.UserID,
 		CreatedAt: time.Now(),
 	}
-	if result := db.Create(&friendship2).Error; result != nil {
+	if result := db.Table("friends").Create(&friendship2).Error; result != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
 		return
 	}
