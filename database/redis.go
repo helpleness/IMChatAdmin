@@ -32,10 +32,10 @@ func InitClusterClient() *redis.Client {
 	//		panic(err)
 	//	}
 	//}(RedisClient)
-	fmt.Printf("Connecting Redis : %v\n", masteraddr)
+	fmt.Printf("Redis Config - Addr: %s, Password: %s\n", masteraddr, password)
 
 	// go-redis库v8版本相关命令都需要传递context.Context参数,Background 返回一个非空的Context,它永远不会被取消，没有值，也没有期限。
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	// 验证是否连接到redis服务端

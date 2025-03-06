@@ -48,17 +48,17 @@ type Friends struct {
 
 // Group 表示群聊的基本信息
 type Group struct {
-	GroupID     int       `gorm:"primaryKey;type:varchar(36)"` // 群聊唯一ID，使用字符串
-	GroupName   string    `gorm:"type:varchar(100);not null"`  // 群聊名称，最长100字符
-	OwnerID     int       `gorm:"not null"`                    // 群主的用户ID
-	CreatedTime time.Time `gorm:"autoCreateTime"`              // 群聊创建时间
+	GroupID     int       `gorm:"primaryKey;not null;autoIncrement"` // 群聊唯一ID，使用字符串
+	GroupName   string    `gorm:"type:varchar(100);not null"`        // 群聊名称，最长100字符
+	OwnerID     int       `gorm:"not null"`                          // 群主的用户ID
+	CreatedTime time.Time `gorm:"autoCreateTime"`                    // 群聊创建时间
 	//Members     []GroupMember `gorm:"foreignKey:GroupID;references:GroupID;constraint:OnDelete:CASCADE"` // 群聊成员列表，外键关联
 }
 
 // GroupMember 表示群聊中的成员信息
 type GroupMember struct {
 	ID       uint      `gorm:"primaryKey;autoIncrement"`  // 主键ID
-	GroupID  string    `gorm:"not null"`                  // 群聊ID，关联Group表
+	GroupID  int       `gorm:"not null"`                  // 群聊ID，关联Group表
 	UserID   int       `gorm:"not null"`                  // 成员的用户ID
 	JoinTime time.Time `gorm:"autoCreateTime"`            // 加入群聊的时间
 	Role     string    `gorm:"type:varchar(20);not null"` // 成员角色，例如 "owner", "admin", "member"

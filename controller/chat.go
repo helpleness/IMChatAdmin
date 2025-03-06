@@ -137,7 +137,7 @@ func GroupCreated(ctx *gin.Context) {
 	}
 
 	groupMember := model.GroupMember{
-		GroupID: strconv.Itoa(group.GroupID),
+		GroupID: group.GroupID,
 		UserID:  req.CreatorID,
 		Role:    "owner",
 	}
@@ -147,7 +147,7 @@ func GroupCreated(ctx *gin.Context) {
 	}
 
 	// 缓存群主信息
-	cacheKey = "group_member:" + groupMember.GroupID
+	cacheKey = "group_member:" + strconv.Itoa(groupMember.GroupID)
 	groupMemberMarshal, _ := json.Marshal(groupMember)
 	if err := redisCli.LPush(ctx, cacheKey, groupMemberMarshal).Err(); err != nil {
 		log.Printf("Error caching group member: %v", err)
@@ -166,7 +166,7 @@ func GroupCreated(ctx *gin.Context) {
 		}
 
 		groupMember := model.GroupMember{
-			GroupID: strconv.Itoa(group.GroupID),
+			GroupID: group.GroupID,
 			UserID:  memberID,
 			Role:    "member",
 		}
@@ -175,7 +175,7 @@ func GroupCreated(ctx *gin.Context) {
 			return
 		}
 		// 缓存成员信息
-		cacheKey = "group_member:" + groupMember.GroupID
+		cacheKey = "group_member:" + strconv.Itoa(groupMember.GroupID)
 		groupMemberMarshal, _ := json.Marshal(groupMember)
 		if err := redisCli.LPush(ctx, cacheKey, groupMemberMarshal).Err(); err != nil {
 			log.Printf("Error caching group member: %v", err)
@@ -190,64 +190,64 @@ func GroupCreated(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "Group created successfully", "group_id": group.GroupID})
 }
 
-// 添加用户到群组的请求
-func GroupAdd(ctx *gin.Context) {
-	var req request.GroupAdd
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 验证用户ID和群组ID
-	if req.UserID <= 0 || req.GroupID <= 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ID不正确"})
-		return
-	}
-
-	// 查找数据库中是否存在用户
-	var user model.User
-	db := database.GetDB()
-	if result := db.First(&user, req.UserID); result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-			return
-		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-		return
-	}
-
-	// 查找数据库中是否存在群组
-	var group model.Group
-	if result := db.First(&group, req.GroupID); result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
-			return
-		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-		return
-	}
-
-	// 检查用户是否已经是群组成员
-	var existingMember model.GroupMember
-	if result := db.Where("group_id = ? AND user_id = ?", req.GroupID, req.UserID).First(&existingMember).Error; result == nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "User is already a member of the group"})
-		return
-	}
-
-	// 发送加入申请
-	groupMember := model.GroupMember{
-		GroupID: strconv.Itoa(group.GroupID),
-		UserID:  int(user.ID),
-		Role:    "member",
-	}
-	if result := db.Create(&groupMember).Error; result != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
-		return
-	}
-
-	// 假设申请已发送
-	ctx.JSON(http.StatusOK, gin.H{"message": "Group join request sent successfully"})
-}
+//// 添加用户到群组的请求
+//func GroupAdd(ctx *gin.Context) {
+//	var req request.GroupAdd
+//	if err := ctx.ShouldBindJSON(&req); err != nil {
+//		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+//		return
+//	}
+//
+//	// 验证用户ID和群组ID
+//	if req.UserID <= 0 || req.GroupID <= 0 {
+//		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ID不正确"})
+//		return
+//	}
+//
+//	// 查找数据库中是否存在用户
+//	var user model.User
+//	db := database.GetDB()
+//	if result := db.First(&user, req.UserID); result.Error != nil {
+//		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+//			ctx.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+//			return
+//		}
+//		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+//		return
+//	}
+//
+//	// 查找数据库中是否存在群组
+//	var group model.Group
+//	if result := db.First(&group, req.GroupID); result.Error != nil {
+//		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+//			ctx.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
+//			return
+//		}
+//		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+//		return
+//	}
+//
+//	// 检查用户是否已经是群组成员
+//	var existingMember model.GroupMember
+//	if result := db.Where("group_id = ? AND user_id = ?", req.GroupID, req.UserID).First(&existingMember).Error; result == nil {
+//		ctx.JSON(http.StatusBadRequest, gin.H{"error": "User is already a member of the group"})
+//		return
+//	}
+//
+//	// 发送加入申请
+//	groupMember := model.GroupMember{
+//		GroupID: group.GroupID,
+//		UserID:  int(user.ID),
+//		Role:    "member",
+//	}
+//	if result := db.Create(&groupMember).Error; result != nil {
+//		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
+//		return
+//	}
+//
+//	// 假设申请已发送
+//	ctx.JSON(http.StatusOK, gin.H{"message": "Group join request sent successfully"})
+//}
 
 // 旁路缓存添加用户到群组的请求
 func GroupAddRedis(ctx *gin.Context) {
@@ -306,7 +306,7 @@ func GroupAddRedis(ctx *gin.Context) {
 
 	// 发送加入申请
 	groupMember := model.GroupMember{
-		GroupID: strconv.Itoa(group.GroupID),
+		GroupID: group.GroupID,
 		UserID:  req.UserID,
 		Role:    "member",
 	}
@@ -329,127 +329,216 @@ func GroupAddRedis(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "Group join request sent successfully"})
 }
 
-// 申请加入群组的请求
-func GroupApplication(ctx *gin.Context) {
-	var req request.GroupApplication
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+//// 申请加入群组的请求
+//func GroupApplication(ctx *gin.Context) {
+//	var req request.GroupApplication
+//	if err := ctx.ShouldBindJSON(&req); err != nil {
+//		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+//		return
+//	}
+//
+//	// 验证用户ID和群组ID
+//	if req.UserID <= 0 || req.GroupID <= 0 {
+//		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ID不正确"})
+//		return
+//	}
+//
+//	// 查找数据库中是否存在用户
+//	var user model.User
+//	db := database.GetDB()
+//	if result := db.First(&user, req.UserID); result.Error != nil {
+//		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+//			ctx.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+//			return
+//		}
+//		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+//		return
+//	}
+//
+//	// 查找数据库中是否存在群组
+//	var group model.Group
+//	if result := db.First(&group, req.GroupID); result.Error != nil {
+//		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+//			ctx.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
+//			return
+//		}
+//		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+//		return
+//	}
+//
+//	// 检查用户是否已经发送过申请
+//	var existingApplication request.GroupApplication
+//	if result := db.Where("user_id = ? AND group_id = ?", req.UserID, req.GroupID).First(&existingApplication).Error; result == nil {
+//		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Application already exists"})
+//		return
+//	}
+//
+//	// 发送申请
+//	req.Status = request.Pending // 设置请求状态为待处理
+//	if result := db.Create(&req).Error; result != nil {
+//		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
+//		return
+//	}
+//
+//	// 假设申请已发送
+//	ctx.JSON(http.StatusOK, gin.H{"message": "Group application sent successfully"})
+//}
 
-	// 验证用户ID和群组ID
-	if req.UserID <= 0 || req.GroupID <= 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ID不正确"})
-		return
-	}
-
-	// 查找数据库中是否存在用户
-	var user model.User
-	db := database.GetDB()
-	if result := db.First(&user, req.UserID); result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-			return
-		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-		return
-	}
-
-	// 查找数据库中是否存在群组
-	var group model.Group
-	if result := db.First(&group, req.GroupID); result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
-			return
-		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-		return
-	}
-
-	// 检查用户是否已经发送过申请
-	var existingApplication request.GroupApplication
-	if result := db.Where("user_id = ? AND group_id = ?", req.UserID, req.GroupID).First(&existingApplication).Error; result == nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Application already exists"})
-		return
-	}
-
-	// 发送申请
-	req.Status = request.Pending // 设置请求状态为待处理
-	if result := db.Create(&req).Error; result != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
-		return
-	}
-
-	// 假设申请已发送
-	ctx.JSON(http.StatusOK, gin.H{"message": "Group application sent successfully"})
-}
-
-// 申请加入群组的请求
+// GroupApplicationRedis 处理用户申请加入群组的逻辑
 func GroupApplicationRedis(ctx *gin.Context) {
 	var req request.GroupApplication
+	// 解析请求参数
 	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效", "details": err.Error()})
+		return
+	}
+
+	// 参数校验
+	if err := validateApplicationRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 获取数据库和Redis客户端
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
 
-	// 验证用户ID和群组ID
-	if req.UserID <= 0 || req.GroupID <= 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ID不正确"})
+	// 检查用户是否存在
+	if err := isuserexist(ctx, req.UserID); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err})
 		return
 	}
 
-	//验证用户是否存在
-	err := isuserexist(ctx, req.UserID)
+	// 检查群组是否存在
+	group, err := checkGroupExistence(ctx, req.GroupID)
 	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 检查是否已存在申请
+	if exists, err := checkExistingApplication(ctx, db, redisCli, req, group); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	} else if exists {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "您已提交过申请"})
+		return
+	}
+
+	// 创建申请记录
+	if err := createGroupApplication(ctx, db, redisCli, &req, group); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "申请提交失败", "details": err.Error()})
+		return
+	}
+
+	// 成功响应
+	ctx.JSON(http.StatusOK, gin.H{"message": "群组申请发送成功"})
+}
+
+// validateApplicationRequest 验证申请参数
+func validateApplicationRequest(req *request.GroupApplication) error {
+	if req.UserID <= 0 {
+		return errors.New("用户ID无效")
+	}
+	if req.GroupID <= 0 {
+		return errors.New("群组ID无效")
+	}
+	return nil
+}
+
+// checkGroupExistence 检查群组是否存在
+func checkGroupExistence(ctx *gin.Context, groupID int) (*model.Group, error) {
+	db := database.GetDB()
 	var group model.Group
-	err, group = isgroupexist(ctx, req.GroupID)
-	if err != nil {
-		return
+	if err := db.First(&group, groupID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "群组不存在"})
+			return nil, err
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "群组查询失败"})
+		return nil, err
 	}
+	return &group, nil
+}
 
-	// 检查用户是否已经发送过申请
+// checkExistingApplication 检查是否已存在申请
+func checkExistingApplication(
+	ctx *gin.Context,
+	db *gorm.DB,
+	redisCli *redis.Client,
+	req request.GroupApplication,
+	group *model.Group,
+) (bool, error) {
 	cacheKey := "group_application:" + strconv.Itoa(group.OwnerID)
-	applicationCache, err := redisCli.Get(ctx, cacheKey).Result()
-	var existingApplication request.GroupApplication
 
+	// 先检查Redis缓存
+	_, err := redisCli.Get(ctx, cacheKey).Result()
 	if err == nil {
-		// 缓存命中，解析缓存数据
-		if err := json.Unmarshal([]byte(applicationCache), &existingApplication); err != nil {
-			log.Printf("Error unmarshalling application from cache: %v", err)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling application from cache"})
-			return
-		}
-	} else {
-		// 缓存未命中，从数据库中查询
-		if result := db.Where("user_id = ? AND group_id = ?", req.UserID, req.GroupID).First(&existingApplication).Error; result == nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "Application already exists"})
-			return
-		}
+		// 缓存命中
+		return true, nil
 	}
 
-	// 发送申请
-	req.Status = request.Pending // 设置请求状态为待处理
-	if result := db.Create(&req).Error; result != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
-		return
+	if !errors.Is(err, redis.Nil) {
+		// Redis错误
+		return false, err
+	}
+
+	// 缓存未命中，检查数据库
+	var existingApplication request.GroupApplication
+	result := db.Where("user_id = ? AND group_id = ?", req.UserID, req.GroupID).First(&existingApplication)
+
+	return result.Error == nil, nil
+}
+
+// createGroupApplication 创建群组申请
+func createGroupApplication(
+	ctx *gin.Context,
+	db *gorm.DB,
+	redisCli *redis.Client,
+	req *request.GroupApplication,
+	group *model.Group,
+) error {
+	// 设置申请状态
+	req.Status = request.Pending
+
+	// 开启事务
+	tx := db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 创建申请记录
+	if err := tx.Create(req).Error; err != nil {
+		tx.Rollback()
+		return err
 	}
 
 	// 缓存申请信息
-	applicationCacheMarshal, _ := json.Marshal(req)
+	cacheKey := "group_application:" + strconv.Itoa(group.OwnerID)
+	applicationCacheMarshal, err := json.Marshal(req)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 使用 Set 替代 LPush，避免重复存储
 	if err := redisCli.LPush(ctx, cacheKey, applicationCacheMarshal).Err(); err != nil {
-		log.Printf("Error caching application: %v", err)
+		tx.Rollback()
+		return err
 	}
 	err = redisCli.Expire(ctx, cacheKey, 7*24/time.Hour).Err()
 	if err != nil {
-		log.Printf("Error caching group member: %v", err)
+		tx.Rollback()
+		return err
 	}
-	// 假设申请已发送
-	ctx.JSON(http.StatusOK, gin.H{"message": "Group application sent successfully"})
+
+	// 提交事务
+	return tx.Commit().Error
 }
+
+// 可以添加其他辅助函数，如通知群主、限制申请频率等
 
 func isgroupexist(ctx *gin.Context, GroupID int) (error, model.Group) {
 	db := database.GetDB()
@@ -468,7 +557,7 @@ func isgroupexist(ctx *gin.Context, GroupID int) (error, model.Group) {
 		}
 	} else {
 		// 缓存未命中，从数据库中查询
-		if result := db.Table("users").Where("group_id =?", GroupID).First(&group); result.Error != nil {
+		if result := db.Table("groups").Where("group_id =?", GroupID).First(&group); result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 				ctx.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
 				return err, group
@@ -685,7 +774,7 @@ func GetGroup(ctx *gin.Context, UserID int) (error, []model.Group) {
 		// 获取群组信息
 		groupIDs := make([]string, len(userGroups))
 		for i, ug := range userGroups {
-			groupIDs[i] = ug.GroupID
+			groupIDs[i] = strconv.Itoa(ug.GroupID)
 		}
 
 		if result := db.Where("group_id IN ?", groupIDs).Find(&groups); result.Error != nil {
@@ -716,77 +805,163 @@ func GetPendingGroupApplications(ctx *gin.Context, UserID int) (error, []request
 	redisCli := database.GetRedisClient()
 
 	// 缓存键
-	cacheKey := "GroupApplicationList:" + strconv.Itoa(UserID)
+	cacheKey := fmt.Sprintf("GroupApplicationList:%d", UserID)
 
 	// 尝试从缓存中获取数据
-	applicationCaches, err := redisCli.LRange(ctx, cacheKey, 0, -1).Result()
-	var applications []request.GroupApplication
+	applications, err := fetchApplicationsFromCache(ctx, redisCli, cacheKey)
+	if err == nil && len(applications) > 0 {
+		return nil, applications
+	}
 
-	if err == nil {
-		// 缓存命中，解析缓存数据
-		for _, applicationCache := range applicationCaches {
-			var application request.GroupApplication
-			if err := json.Unmarshal([]byte(applicationCache), &application); err != nil {
-				log.Printf("Error unmarshalling group application from cache: %v", err)
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling group application from cache"})
-				return err, applications
-			}
-			applications = append(applications, application)
-		}
-	} else {
-		// 缓存未命中，从数据库中查询
-		// 查询用户作为群主的所有群组
-		var ownerGroups []model.Group
-		if result := db.Where("owner_id = ?", UserID).Find(&ownerGroups); result.Error != nil {
-			log.Printf("Error fetching owner groups from database: %v", result.Error)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching owner groups from database"})
-			return result.Error, applications
-		}
+	// 缓存未命中，从数据库中查询
+	applications, err = fetchApplicationsFromDatabase(ctx, db, UserID)
+	if err != nil {
+		return err, nil
+	}
 
-		// 查询用户作为管理员的所有群组
-		var adminGroups []model.GroupMember
-		if result := db.Where("user_id = ? AND role = ?", UserID, "admin").Find(&adminGroups); result.Error != nil {
-			log.Printf("Error fetching admin groups from database: %v", result.Error)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching admin groups from database"})
-			return result.Error, applications
-		}
-
-		// 合并群主和管理员的 GroupID 列表
-		groupIDs := make(map[int]bool) // 使用 map 去重
-		for _, group := range ownerGroups {
-			id := group.GroupID
-			groupIDs[id] = true
-		}
-		for _, member := range adminGroups {
-			id, _ := strconv.Atoi(member.GroupID)
-			groupIDs[id] = true
-		}
-
-		// 提取去重后的 GroupID 列表
-		groupIDList := make([]int, 0, len(groupIDs))
-		for groupID := range groupIDs {
-			groupIDList = append(groupIDList, groupID)
-		}
-
-		// 查询这些群组的待处理加群申请
-		if result := db.Where("group_id IN ? AND status = ? AND created_at > ?", groupIDList, request.Pending, time.Now().Add(-7*24*time.Hour)).Find(&applications); result.Error != nil {
-			log.Printf("Error fetching group applications from database: %v", result.Error)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching group applications from database"})
-			return result.Error, applications
-		}
-
-		// 缓存群组申请信息
-		for _, application := range applications {
-			applicationCache, _ := json.Marshal(application)
-			if err := redisCli.LPush(ctx, cacheKey, applicationCache).Err(); err != nil {
-				log.Printf("Error caching group application: %v", err)
-			}
-		}
-		// 设置缓存过期时间
-		if err := redisCli.Expire(ctx, cacheKey, 7*24*time.Hour).Err(); err != nil {
-			log.Printf("Error setting cache expiration: %v", err)
-		}
+	// 缓存查询结果
+	if err := cacheApplications(ctx, redisCli, cacheKey, applications); err != nil {
+		log.Printf("Error caching group applications: %v", err)
 	}
 
 	return nil, applications
+}
+
+// fetchApplicationsFromCache 从Redis缓存获取申请列表
+func fetchApplicationsFromCache(
+	ctx *gin.Context,
+	redisCli *redis.Client,
+	cacheKey string,
+) ([]request.GroupApplication, error) {
+	var applications []request.GroupApplication
+
+	// 使用 JSON 序列化的字符串获取缓存
+	applicationCaches, err := redisCli.LRange(ctx, cacheKey, 0, -1).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, applicationCache := range applicationCaches {
+		var application request.GroupApplication
+		if unmarshalErr := json.Unmarshal([]byte(applicationCache), &application); unmarshalErr != nil {
+			log.Printf("Error unmarshalling group application from cache: %v", unmarshalErr)
+			// 如果单个反序列化失败，继续处理其他缓存项
+			continue
+		}
+		applications = append(applications, application)
+	}
+
+	return applications, nil
+}
+
+// fetchApplicationsFromDatabase 从数据库获取申请列表
+func fetchApplicationsFromDatabase(
+	ctx *gin.Context,
+	db *gorm.DB,
+	UserID int,
+) ([]request.GroupApplication, error) {
+	// 查询用户作为群主的群组
+	ownerGroups, err := fetchOwnerGroups(db, UserID)
+	if err != nil {
+		log.Printf("Error fetching owner groups: %v", err)
+		return nil, err
+	}
+
+	// 查询用户作为管理员的群组
+	adminGroups, err := fetchAdminGroups(db, UserID)
+	if err != nil {
+		log.Printf("Error fetching admin groups: %v", err)
+		return nil, err
+	}
+
+	// 合并并去重群组ID
+	groupIDs := mergeGroupIDs(ownerGroups, adminGroups)
+
+	// 查询待处理的群组申请
+	return fetchPendingApplications(db, groupIDs)
+}
+
+// fetchOwnerGroups 获取用户作为群主的群组
+func fetchOwnerGroups(db *gorm.DB, userID int) ([]model.Group, error) {
+	var ownerGroups []model.Group
+	result := db.Where("owner_id = ?", userID).Find(&ownerGroups)
+	return ownerGroups, result.Error
+}
+
+// fetchAdminGroups 获取用户作为管理员的群组
+func fetchAdminGroups(db *gorm.DB, userID int) ([]model.GroupMember, error) {
+	var adminGroups []model.GroupMember
+	result := db.Where("user_id = ? AND role = ?", userID, "admin").Find(&adminGroups)
+	return adminGroups, result.Error
+}
+
+// mergeGroupIDs 合并并去重群组ID
+func mergeGroupIDs(
+	ownerGroups []model.Group,
+	adminGroups []model.GroupMember,
+) []int {
+	groupIDs := make(map[int]bool)
+
+	for _, group := range ownerGroups {
+		groupIDs[group.GroupID] = true
+	}
+
+	for _, member := range adminGroups {
+		groupIDs[member.GroupID] = true
+	}
+
+	// 转换为切片
+	result := make([]int, 0, len(groupIDs))
+	for groupID := range groupIDs {
+		result = append(result, groupID)
+	}
+
+	return result
+}
+
+// fetchPendingApplications 获取指定群组的待处理申请
+func fetchPendingApplications(
+	db *gorm.DB,
+	groupIDs []int,
+) ([]request.GroupApplication, error) {
+	var applications []request.GroupApplication
+
+	// 查询7天内的待处理申请
+	result := db.Where(
+		"group_id IN ? AND status = ? AND created_at > ?",
+		groupIDs,
+		request.Pending,
+		time.Now().Add(-7*24*time.Hour),
+	).Find(&applications)
+
+	return applications, result.Error
+}
+
+// cacheApplications 缓存申请列表
+func cacheApplications(
+	ctx *gin.Context,
+	redisCli *redis.Client,
+	cacheKey string,
+	applications []request.GroupApplication,
+) error {
+	// 清除旧缓存
+	if err := redisCli.Del(ctx, cacheKey).Err(); err != nil {
+		return err
+	}
+
+	// 缓存新数据
+	for _, application := range applications {
+		applicationCache, err := json.Marshal(application)
+		if err != nil {
+			log.Printf("Error marshalling application: %v", err)
+			continue
+		}
+
+		if err := redisCli.LPush(ctx, cacheKey, applicationCache).Err(); err != nil {
+			log.Printf("Error caching group application: %v", err)
+		}
+	}
+
+	// 设置缓存过期时间
+	return redisCli.Expire(ctx, cacheKey, 7*24*time.Hour).Err()
 }
