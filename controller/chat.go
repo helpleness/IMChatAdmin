@@ -130,14 +130,14 @@ func GroupCreated(ctx *gin.Context) {
 
 	// 缓存群聊信息
 	redisCli := database.GetRedisClient()
-	cacheKey := "group:" + group.GroupID
+	cacheKey := "group:" + strconv.Itoa(group.GroupID)
 	groupMarshal, _ := json.Marshal(group)
 	if err := redisCli.Set(ctx, cacheKey, groupMarshal, 1*time.Hour).Err(); err != nil {
 		log.Printf("Error caching group: %v", err)
 	}
 
 	groupMember := model.GroupMember{
-		GroupID: group.GroupID,
+		GroupID: strconv.Itoa(group.GroupID),
 		UserID:  req.CreatorID,
 		Role:    "owner",
 	}
@@ -166,7 +166,7 @@ func GroupCreated(ctx *gin.Context) {
 		}
 
 		groupMember := model.GroupMember{
-			GroupID: group.GroupID,
+			GroupID: strconv.Itoa(group.GroupID),
 			UserID:  memberID,
 			Role:    "member",
 		}
@@ -236,7 +236,7 @@ func GroupAdd(ctx *gin.Context) {
 
 	// 发送加入申请
 	groupMember := model.GroupMember{
-		GroupID: group.GroupID,
+		GroupID: strconv.Itoa(group.GroupID),
 		UserID:  int(user.ID),
 		Role:    "member",
 	}
@@ -306,7 +306,7 @@ func GroupAddRedis(ctx *gin.Context) {
 
 	// 发送加入申请
 	groupMember := model.GroupMember{
-		GroupID: group.GroupID,
+		GroupID: strconv.Itoa(group.GroupID),
 		UserID:  req.UserID,
 		Role:    "member",
 	}
@@ -754,7 +754,7 @@ func GetPendingGroupApplications(ctx *gin.Context, UserID int) (error, []request
 		// 合并群主和管理员的 GroupID 列表
 		groupIDs := make(map[int]bool) // 使用 map 去重
 		for _, group := range ownerGroups {
-			id, _ := strconv.Atoi(group.GroupID)
+			id := group.GroupID
 			groupIDs[id] = true
 		}
 		for _, member := range adminGroups {

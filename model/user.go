@@ -48,7 +48,7 @@ type Friends struct {
 
 // Group 表示群聊的基本信息
 type Group struct {
-	GroupID     string    `gorm:"primaryKey;type:varchar(36)"` // 群聊唯一ID，使用字符串
+	GroupID     int       `gorm:"primaryKey;type:varchar(36)"` // 群聊唯一ID，使用字符串
 	GroupName   string    `gorm:"type:varchar(100);not null"`  // 群聊名称，最长100字符
 	OwnerID     int       `gorm:"not null"`                    // 群主的用户ID
 	CreatedTime time.Time `gorm:"autoCreateTime"`              // 群聊创建时间
