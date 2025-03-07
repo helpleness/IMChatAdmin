@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/helpleness/IMChatAdmin/database"
+	"github.com/helpleness/IMChatAdmin/middleware"
 	"github.com/helpleness/IMChatAdmin/model"
 	"github.com/helpleness/IMChatAdmin/model/request"
 	"log"
@@ -23,14 +24,13 @@ func HandleFriendAdd(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	ID, _ := ctx.Get("userid")
+	UserID := ID.(uint)
+	req.UserID = int(UserID)
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
-	err := isuserexist(ctx, req.UserID)
-	if err != nil {
-		ctx.JSON(200, gin.H{"error": "userid err"})
-		return
-	}
-	err = isuserexist(ctx, req.FriendID)
+	var err error
+	_, err = middleware.Isuserexist(ctx, req.FriendID)
 	if err != nil {
 		ctx.JSON(200, gin.H{"error": "friendid err"})
 		return
@@ -142,16 +142,15 @@ func HandleGroupApplication(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	ID, _ := ctx.Get("userid")
+	UserID := ID.(uint)
+	req.UserID = int(UserID)
 
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
 
 	// 检查用户是否存在
-	err := isuserexist(ctx, req.UserID)
-	if err != nil {
-		ctx.JSON(200, gin.H{"error": "userid err"})
-		return
-	}
+	var err error
 
 	// 检查群组是否存在
 	err, group := isgroupexist(ctx, req.GroupID)
@@ -353,9 +352,9 @@ func deleteRequestHandler[T any](
 	// 检查请求是否过期
 	var isExpired bool
 	switch v := any(req).(type) {
-	case request.FriendAdd:
+	case model.FriendAdd:
 		isExpired = v.CreatedAt.Add(7 * 24 * time.Hour).Before(time.Now())
-	case request.GroupApplication:
+	case model.GroupApplication:
 		isExpired = v.CreatedAt.Add(7 * 24 * time.Hour).Before(time.Now())
 	default:
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "未知的请求类型"})
@@ -398,13 +397,13 @@ func DeleteFriendAddByID(ctx *gin.Context) {
 	deleteRequestHandler(
 		ctx,
 		// 查找请求的函数
-		func(db *gorm.DB, id int) (request.FriendAdd, error) {
-			var req request.FriendAdd
+		func(db *gorm.DB, id int) (model.FriendAdd, error) {
+			var req model.FriendAdd
 			err := db.Where("id=?", id).First(&req).Error
 			return req, err
 		},
 		// 删除请求的函数
-		func(db *gorm.DB, req request.FriendAdd) error {
+		func(db *gorm.DB, req model.FriendAdd) error {
 			return db.Delete(&req).Error
 		},
 		"加好友",
@@ -416,13 +415,13 @@ func DeleteGroupApplicationByID(ctx *gin.Context) {
 	deleteRequestHandler(
 		ctx,
 		// 查找请求的函数
-		func(db *gorm.DB, id int) (request.GroupApplication, error) {
-			var req request.GroupApplication
+		func(db *gorm.DB, id int) (model.GroupApplication, error) {
+			var req model.GroupApplication
 			err := db.Where("id=?", id).First(&req).Error
 			return req, err
 		},
 		// 删除请求的函数
-		func(db *gorm.DB, req request.GroupApplication) error {
+		func(db *gorm.DB, req model.GroupApplication) error {
 			return db.Delete(&req).Error
 		},
 		"加群",

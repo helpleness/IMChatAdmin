@@ -27,14 +27,15 @@ func InitMysql() *gorm.DB {
 		panic("failed to connect mysql database,err: " + err.Error())
 	}
 	//自动创建表单，如果已经有表单，则不重复创建
+
 	//db.AutoMigrate(&model.User{})
 	//db.AutoMigrate(&model.File{})
 	//db.AutoMigrate(&model.Friends{})
 	//db.AutoMigrate(&model.Group{})
 	//db.AutoMigrate(&model.GroupMember{})
 	//db.AutoMigrate(&model.MyMessage{})
-	//db.AutoMigrate(&request.FriendAdd{})
-	//db.AutoMigrate(&request.GroupApplication{})
+	//db.AutoMigrate(&model.FriendAdd{})
+	//db.AutoMigrate(&model.GroupApplication{})
 	DB = db
 	return db
 }

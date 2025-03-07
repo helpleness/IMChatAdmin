@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/helpleness/IMChatAdmin/database"
+	"github.com/helpleness/IMChatAdmin/middleware"
 	"github.com/helpleness/IMChatAdmin/model"
 	"github.com/helpleness/IMChatAdmin/model/request"
 	"github.com/redis/go-redis/v9"
@@ -64,6 +65,9 @@ func FriendAdd(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	ID, _ := ctx.Get("userid")
+	UserID := ID.(uint)
+	req.UserID = int(UserID)
 	// 这里添加处理好友添加请求的逻辑
 	// 例如，验证用户ID，发送好友请求等
 	if req.UserID <= 0 || req.FriendID <= 0 {
@@ -71,11 +75,7 @@ func FriendAdd(ctx *gin.Context) {
 	}
 	// 查找数据库中是否存在这两个ID
 	db := database.GetDB()
-	err := isuserexist(ctx, req.UserID)
-	if err != nil {
-		return
-	}
-	err = isuserexist(ctx, req.FriendID)
+	_, err := middleware.Isuserexist(ctx, req.FriendID)
 	if err != nil {
 		return
 	}
@@ -104,6 +104,9 @@ func GroupCreated(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	ID, _ := ctx.Get("userid")
+	UserID := ID.(uint)
+	req.CreatorID = int(UserID)
 
 	// 验证创建者ID
 	if req.CreatorID <= 0 {
@@ -112,11 +115,7 @@ func GroupCreated(ctx *gin.Context) {
 	}
 
 	db := database.GetDB()
-	// 查找数据库中是否存在创建者
-	err := isuserexist(ctx, req.CreatorID)
-	if err != nil {
-		return
-	}
+	var err error
 
 	// 创建群聊记录
 	group := model.Group{
@@ -132,7 +131,7 @@ func GroupCreated(ctx *gin.Context) {
 	redisCli := database.GetRedisClient()
 	cacheKey := "group:" + strconv.Itoa(group.GroupID)
 	groupMarshal, _ := json.Marshal(group)
-	if err := redisCli.Set(ctx, cacheKey, groupMarshal, 1*time.Hour).Err(); err != nil {
+	if err := redisCli.Set(ctx, cacheKey, groupMarshal, 7*24*time.Hour).Err(); err != nil {
 		log.Printf("Error caching group: %v", err)
 	}
 
@@ -159,7 +158,7 @@ func GroupCreated(ctx *gin.Context) {
 
 	// 添加初始成员
 	for _, memberID := range req.InitialMembers {
-		err := isuserexist(ctx, memberID)
+		_, err := middleware.Isuserexist(ctx, memberID)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err})
 			return
@@ -256,6 +255,9 @@ func GroupAddRedis(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	ID, _ := ctx.Get("userid")
+	UserID := ID.(uint)
+	req.UserID = int(UserID)
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
 
@@ -265,11 +267,7 @@ func GroupAddRedis(ctx *gin.Context) {
 		return
 	}
 
-	// 查找数据库中是否存在用户
-	err := isuserexist(ctx, req.UserID)
-	if err != nil {
-		return
-	}
+	var err error
 
 	// 查找数据库中是否存在群组
 	var group model.Group
@@ -392,7 +390,9 @@ func GroupApplicationRedis(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效", "details": err.Error()})
 		return
 	}
-
+	ID, _ := ctx.Get("userid")
+	UserID := ID.(uint)
+	req.UserID = int(UserID)
 	// 参数校验
 	if err := validateApplicationRequest(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -403,11 +403,7 @@ func GroupApplicationRedis(ctx *gin.Context) {
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
 
-	// 检查用户是否存在
-	if err := isuserexist(ctx, req.UserID); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err})
-		return
-	}
+	var err error
 
 	// 检查群组是否存在
 	group, err := checkGroupExistence(ctx, req.GroupID)
@@ -437,9 +433,6 @@ func GroupApplicationRedis(ctx *gin.Context) {
 
 // validateApplicationRequest 验证申请参数
 func validateApplicationRequest(req *request.GroupApplication) error {
-	if req.UserID <= 0 {
-		return errors.New("用户ID无效")
-	}
 	if req.GroupID <= 0 {
 		return errors.New("群组ID无效")
 	}
@@ -573,42 +566,6 @@ func isgroupexist(ctx *gin.Context, GroupID int) (error, model.Group) {
 		}
 	}
 	return nil, group
-}
-
-func isuserexist(ctx *gin.Context, UserID int) error {
-	db := database.GetDB()
-	redisCli := database.GetRedisClient()
-	// 查找数据库中是否存在用户
-	cacheKey := "user:" + strconv.Itoa(UserID)
-	userCache, err := redisCli.Get(ctx, cacheKey).Result()
-	var user model.User
-
-	if err == nil {
-		// 缓存命中，解析缓存数据
-		if err := json.Unmarshal([]byte(userCache), &user); err != nil {
-			log.Printf("Error unmarshalling user from cache: %v", err)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling user from cache"})
-			return err
-		}
-	} else {
-		// 缓存未命中，从数据库中查询
-		if result := db.Table("users").Where("id =?", UserID).First(&user); result.Error != nil {
-			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-				ctx.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-				return err
-			}
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-			return err
-		}
-
-		// 缓存用户信息
-		userCacheMarshal, _ := json.Marshal(user)
-		if err := redisCli.Set(ctx, cacheKey, userCacheMarshal, 7*24*time.Hour).Err(); err != nil {
-			log.Printf("Error caching user: %v", err)
-		}
-	}
-
-	return nil
 }
 
 // IsGroupMember 检查用户是否是群组成员

@@ -17,23 +17,16 @@ import (
 // QueryAllActiveFriendAdds 查询当前用户的所有未过期的 FriendAdd 请求
 func QueryAllActiveFriendAdds(ctx *gin.Context) {
 	// 获取当前用户ID
-	userID := ctx.Query("user_id")
-	if userID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "User ID is required"})
-		return
-	}
+	ID, _ := ctx.Get("userid")
+	UserID := ID.(uint)
+	userIDInt := int(UserID)
 
 	// 缓存键
-	cacheKey := "friend_request:" + userID
-	// 将字符串转换为整数
-	userIDInt, err := strconv.Atoi(userID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid User ID"})
-		return
-	}
+	cacheKey := "friend_request:" + strconv.Itoa(userIDInt)
 	// 尝试从缓存中获取数据
 	redisCli := database.GetRedisClient()
 	var friendAddCaches []string
+	var err error
 	friendAddCaches, err = redisCli.LRange(ctx, cacheKey, 0, -1).Result()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "获取cache错误"})
@@ -150,15 +143,13 @@ func QueryAllActiveFriendAdds(ctx *gin.Context) {
 
 // 查询所有未过期的 GroupApplication 请求
 func QueryAllActiveGroupApplications(ctx *gin.Context) {
-	userid := ctx.Query("user_id")
-	userIdToInt, _ := strconv.Atoi(userid)
-	err := isuserexist(ctx, userIdToInt)
-	if err != nil {
-		return
-	}
+	ID, _ := ctx.Get("userid")
+	UserID := ID.(uint)
+	userIdToInt := int(UserID)
 
 	var groupApplications []request.GroupApplication
-	id, _ := strconv.Atoi(userid)
+	id := userIdToInt
+	var err error
 	err, groupApplications = GetPendingGroupApplications(ctx, id)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

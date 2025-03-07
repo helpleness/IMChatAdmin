@@ -25,6 +25,14 @@ const (
 	ONLINE_STATUS                     // 在线状态更新
 )
 
+type RequestStatus int
+
+const (
+	Pending  RequestStatus = iota // 0: pending
+	Accepted                      // 1: accepted
+	Rejected                      // 2: rejected
+)
+
 // MyMessage 聊天消息结构
 type MyMessage struct {
 	gorm.Model
@@ -62,6 +70,24 @@ type GroupMember struct {
 	UserID   int       `gorm:"not null"`                  // 成员的用户ID
 	JoinTime time.Time `gorm:"autoCreateTime"`            // 加入群聊的时间
 	Role     string    `gorm:"type:varchar(20);not null"` // 成员角色，例如 "owner", "admin", "member"
+}
+
+// FriendAdd 表示添加好友的请求
+type FriendAdd struct {
+	gorm.Model
+	UserID   int           `gorm:"type:int;not null" json:"user_id"`   // 发起添加请求的用户ID
+	FriendID int           `gorm:"type:int;not null" json:"friend_id"` // 要添加的好友的ID
+	Message  string        `gorm:"type:text" json:"message"`           // 添加好友时的附加消息
+	Status   RequestStatus `gorm:"type:int;default:0" json:"status"`   // 请求的处理状态
+}
+
+// GroupApplication 表示申请加入群组的请求
+type GroupApplication struct {
+	gorm.Model
+	UserID  int           `gorm:"type:int;not null" json:"user_id"`  // 申请加入群组的用户的ID
+	GroupID int           `gorm:"type:int;not null" json:"group_id"` // 群组的ID
+	Message string        `gorm:"type:text" json:"message"`          // 申请加入群组时的附加消息
+	Status  RequestStatus `gorm:"type:int;default:0" json:"status"`  // 请求的处理状态
 }
 
 // 好友/群聊加入申请
