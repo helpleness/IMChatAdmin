@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/helpleness/IMChatAdmin/database"
 	"github.com/helpleness/IMChatAdmin/model"
-	"github.com/helpleness/IMChatAdmin/model/request"
 	"gorm.io/gorm"
 	"log"
 	"net/http"
@@ -32,13 +31,13 @@ func QueryAllActiveFriendAdds(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "获取cache错误"})
 		return
 	}
-	var friendAdds []request.FriendAdd
+	var friendAdds []model.FriendAdd
 	fmt.Println("Redis Cache Data:", friendAddCaches) // 打印缓存数据，看看是否为空
 	if err == nil {
 		// 缓存命中，解析缓存数据
 		for _, friendAddCache := range friendAddCaches {
 			fmt.Println("Redis Cache Data:", friendAddCache) // 打印缓存数据，看看是否为空
-			var friendAdd request.FriendAdd
+			var friendAdd model.FriendAdd
 			if err := json.Unmarshal([]byte(friendAddCache), &friendAdd); err != nil {
 				log.Printf("Error unmarshalling friend add request from cache: %v", err)
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling friend add request from cache"})
@@ -50,7 +49,7 @@ func QueryAllActiveFriendAdds(ctx *gin.Context) {
 		// 缓存未命中，从数据库中查询
 		db := database.GetDB()
 		// 查询所有未过期的请求
-		result := db.Table("friend_adds").Where("user_id = ? AND status = ? AND created_at > ?", userIDInt, request.Pending, time.Now().Add(-7*24*time.Hour)).Find(&friendAdds)
+		result := db.Table("friend_adds").Where("user_id = ? AND status = ? AND created_at > ?", userIDInt, model.Pending, time.Now().Add(-7*24*time.Hour)).Find(&friendAdds)
 		if result.Error != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 			return
@@ -147,7 +146,7 @@ func QueryAllActiveGroupApplications(ctx *gin.Context) {
 	UserID := ID.(uint)
 	userIdToInt := int(UserID)
 
-	var groupApplications []request.GroupApplication
+	var groupApplications []model.GroupApplication
 	id := userIdToInt
 	var err error
 	err, groupApplications = GetPendingGroupApplications(ctx, id)

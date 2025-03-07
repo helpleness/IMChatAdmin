@@ -60,7 +60,7 @@ func PushMessage(ctx context.Context, user model.User) {
 
 // 旁路缓存好友添加和处理
 func FriendAdd(ctx *gin.Context) {
-	var req request.FriendAdd
+	var req model.FriendAdd
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -80,7 +80,7 @@ func FriendAdd(ctx *gin.Context) {
 		return
 	}
 	// 发送好友请求
-	req.Status = request.Pending // 设置请求状态为待处理
+	req.Status = model.Pending // 设置请求状态为待处理
 	db.Create(&req)
 	// 缓存到 Redis
 	redisCli := database.GetRedisClient()
@@ -384,7 +384,7 @@ func GroupAddRedis(ctx *gin.Context) {
 
 // GroupApplicationRedis 处理用户申请加入群组的逻辑
 func GroupApplicationRedis(ctx *gin.Context) {
-	var req request.GroupApplication
+	var req model.GroupApplication
 	// 解析请求参数
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效", "details": err.Error()})
@@ -433,7 +433,7 @@ func GroupApplicationRedis(ctx *gin.Context) {
 }
 
 // validateApplicationRequest 验证申请参数
-func validateApplicationRequest(req *request.GroupApplication) error {
+func validateApplicationRequest(req *model.GroupApplication) error {
 	if req.GroupID <= 0 {
 		return errors.New("群组ID无效")
 	}
@@ -460,7 +460,7 @@ func checkExistingApplication(
 	ctx *gin.Context,
 	db *gorm.DB,
 	redisCli *redis.Client,
-	req request.GroupApplication,
+	req model.GroupApplication,
 	group *model.Group,
 ) (bool, error) {
 	cacheKey := "group_application:" + strconv.Itoa(group.OwnerID)
@@ -478,7 +478,7 @@ func checkExistingApplication(
 	}
 
 	// 缓存未命中，检查数据库
-	var existingApplication request.GroupApplication
+	var existingApplication model.GroupApplication
 	result := db.Where("user_id = ? AND group_id = ?", req.UserID, req.GroupID).First(&existingApplication)
 
 	return result.Error == nil, nil
@@ -489,11 +489,11 @@ func createGroupApplication(
 	ctx *gin.Context,
 	db *gorm.DB,
 	redisCli *redis.Client,
-	req *request.GroupApplication,
+	req *model.GroupApplication,
 	group *model.Group,
 ) error {
 	// 设置申请状态
-	req.Status = request.Pending
+	req.Status = model.Pending
 
 	// 开启事务
 	tx := db.Begin()
@@ -758,7 +758,7 @@ func IsFriends(ctx *gin.Context, userID, friendID int) (bool, error) {
 //}
 
 // GetPendingGroupApplications 获取群主和管理员收到的待处理群组申请信息列表
-func GetPendingGroupApplications(ctx *gin.Context, UserID int) (error, []request.GroupApplication) {
+func GetPendingGroupApplications(ctx *gin.Context, UserID int) (error, []model.GroupApplication) {
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
 
@@ -790,8 +790,8 @@ func fetchApplicationsFromCache(
 	ctx *gin.Context,
 	redisCli *redis.Client,
 	cacheKey string,
-) ([]request.GroupApplication, error) {
-	var applications []request.GroupApplication
+) ([]model.GroupApplication, error) {
+	var applications []model.GroupApplication
 
 	// 使用 JSON 序列化的字符串获取缓存
 	applicationCaches, err := redisCli.LRange(ctx, cacheKey, 0, -1).Result()
@@ -800,7 +800,7 @@ func fetchApplicationsFromCache(
 	}
 
 	for _, applicationCache := range applicationCaches {
-		var application request.GroupApplication
+		var application model.GroupApplication
 		if unmarshalErr := json.Unmarshal([]byte(applicationCache), &application); unmarshalErr != nil {
 			log.Printf("Error unmarshalling group application from cache: %v", unmarshalErr)
 			// 如果单个反序列化失败，继续处理其他缓存项
@@ -817,8 +817,8 @@ func fetchPendingApplicationsDirectly(
 	ctx *gin.Context,
 	db *gorm.DB,
 	userID int,
-) ([]request.GroupApplication, error) {
-	var applications []request.GroupApplication
+) ([]model.GroupApplication, error) {
+	var applications []model.GroupApplication
 	oneWeekAgo := time.Now().AddDate(0, 0, -7).Format("2006-01-02 15:04:05")
 
 	// 使用子查询和JOIN一次性获取结果
@@ -847,7 +847,7 @@ func cacheApplications(
 	ctx *gin.Context,
 	redisCli *redis.Client,
 	cacheKey string,
-	applications []request.GroupApplication,
+	applications []model.GroupApplication,
 ) error {
 	startTime := time.Now() // 记录开始时间
 	// 清除旧缓存

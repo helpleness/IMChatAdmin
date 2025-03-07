@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,9 +9,9 @@ import (
 	"github.com/helpleness/IMChatAdmin/database"
 	"github.com/helpleness/IMChatAdmin/middleware"
 	"github.com/helpleness/IMChatAdmin/model"
-	"github.com/helpleness/IMChatAdmin/model/request"
 	"log"
 	"strconv"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,7 +20,7 @@ import (
 
 // HandleFriendAdd 处理好友申请
 func HandleFriendAdd(ctx *gin.Context) {
-	var req request.FriendAdd
+	var req model.FriendAdd
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -45,9 +46,9 @@ func HandleFriendAdd(ctx *gin.Context) {
 		return
 	}
 	// 更新请求状态
-	req.Status = request.Accepted // 或 request.Rejected
+	req.Status = model.Accepted // 或 request.Rejected
 	// 从数据库中获取当前记录
-	var currentReq request.FriendAdd
+	var currentReq model.FriendAdd
 	if result := db.Where("user_id = ? AND friend_id = ?", req.UserID, req.FriendID).First(&currentReq).Error; result != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
 		return
@@ -72,7 +73,7 @@ func HandleFriendAdd(ctx *gin.Context) {
 	fmt.Printf("originalRequests: %v\n", originalRequests)
 	// 找到并删除匹配的原始好友申请
 	for _, originalRequest := range originalRequests {
-		var originalReq request.FriendAdd
+		var originalReq model.FriendAdd
 		if err := json.Unmarshal([]byte(originalRequest), &originalReq); err != nil {
 			log.Printf("Error unmarshalling original friend request: %v", err)
 			continue
@@ -134,10 +135,9 @@ func HandleFriendAdd(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "Request handled successfully"})
 }
 
-// 处理群组申请
 // HandleGroupApplication 处理群组申请
 func HandleGroupApplication(ctx *gin.Context) {
-	var req request.GroupApplication
+	var req model.GroupApplication
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -149,22 +149,57 @@ func HandleGroupApplication(ctx *gin.Context) {
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
 
-	// 检查用户是否存在
-	var err error
+	// 使用WaitGroup来协调所有并发操作
+	var wg sync.WaitGroup
+	var mu sync.Mutex // 用于保护错误变量和共享数据
+
+	// 错误通道，用于收集并发操作的错误
+	errChan := make(chan error, 2)
+	var group model.Group
+	var isMember bool
+
+	// 同时检查群组是否存在和用户是否已经是群组成员
+	wg.Add(2)
 
 	// 检查群组是否存在
-	err, group := isgroupexist(ctx, req.GroupID)
-	if err != nil {
-		ctx.JSON(200, gin.H{"error": "groupid err"})
+	go func() {
+		defer wg.Done()
+		var err error
+		_, g := isgroupexist(ctx, req.GroupID)
+		if err != nil {
+			errChan <- fmt.Errorf("groupid err: %v", err)
+			return
+		}
+		mu.Lock()
+		group = g
+		mu.Unlock()
+	}()
+
+	// 检查用户是否已经是群组成员
+	go func() {
+		defer wg.Done()
+		var err error
+		ismember, err := IsGroupMember(ctx, req.UserID, req.GroupID)
+		if err != nil {
+			errChan <- fmt.Errorf("group member check err: %v", err)
+			return
+		}
+		mu.Lock()
+		isMember = ismember
+		mu.Unlock()
+	}()
+
+	// 等待并发检查完成
+	wg.Wait()
+	close(errChan)
+
+	// 检查是否有错误
+	for err := range errChan {
+		ctx.JSON(200, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 检查用户是否已经是群组成员
-	isMember, err := IsGroupMember(ctx, req.UserID, req.GroupID)
-	if err != nil {
-		ctx.JSON(200, gin.H{"error": "group member check err"})
-		return
-	}
+	// 检查用户是否已经是成员
 	if isMember {
 		ctx.JSON(200, gin.H{"msg": "user already in group"})
 		return
@@ -179,10 +214,10 @@ func HandleGroupApplication(ctx *gin.Context) {
 	}()
 
 	// 更新请求状态
-	req.Status = request.Accepted // 或 request.Rejected
+	req.Status = model.Accepted // 或 request.Rejected
 
 	// 从数据库中获取当前记录
-	var currentReq request.GroupApplication
+	var currentReq model.GroupApplication
 	if result := tx.Where("user_id = ? AND group_id = ?", req.UserID, req.GroupID).First(&currentReq).Error; result != nil {
 		tx.Rollback()
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error()})
@@ -216,72 +251,75 @@ func HandleGroupApplication(ctx *gin.Context) {
 		return
 	}
 
-	// 缓存清理
-	go func() {
-		// 删除群组申请缓存
-		applicationCacheKey := fmt.Sprintf("GroupApplicationList:%d", group.OwnerID)
-
-		// 获取所有缓存项
-		originalRequests, err := redisCli.LRange(ctx, applicationCacheKey, 0, -1).Result()
-		if err != nil {
-			log.Printf("获取原始群组申请缓存错误: %v", err)
-			return
-		}
-
-		fmt.Printf("originalRequests: %v\n", applicationCacheKey)
-		fmt.Printf("originalRequests: %v\n", originalRequests)
-		// 批量删除匹配的申请
-		for _, originalRequest := range originalRequests {
-			var originalReq request.GroupApplication
-			if err := json.Unmarshal([]byte(originalRequest), &originalReq); err != nil {
-				log.Printf("解析原始群组申请错误: %v", err)
-				continue
-			}
-
-			// 检查是否是需要删除的请求
-			if originalReq.UserID == req.UserID && originalReq.GroupID == req.GroupID {
-				// 使用 LRem 删除匹配的请求
-				if delCount, err := redisCli.LRem(ctx, applicationCacheKey, 0, originalRequest).Result(); err != nil {
-					log.Printf("从缓存中删除群组申请错误: %v", err)
-				} else {
-					log.Printf("删除群组申请数量: %d", delCount)
-				}
-			}
-		}
-
-		// 将群组成员关系缓存到 Redis
-		memberCacheKey := fmt.Sprintf("group_member:%d", req.GroupID)
-		memberCache, err := json.Marshal(groupMember)
-		if err != nil {
-			log.Printf("序列化群组成员错误: %v", err)
-			return
-		}
-
-		// 使用管道操作
-		pipe := redisCli.Pipeline()
-		pipe.LPush(ctx, memberCacheKey, memberCache)
-		pipe.Expire(ctx, memberCacheKey, 7*24*time.Hour)
-		if _, err := pipe.Exec(ctx); err != nil {
-			log.Printf("缓存群组成员关系错误: %v", err)
-		}
-
-		// 更新用户的群组列表缓存
-		userGroupCacheKey := fmt.Sprintf("groupList:%d", req.UserID)
-		if err := redisCli.Del(ctx, userGroupCacheKey).Err(); err != nil {
-			log.Printf("删除用户群组缓存错误: %v", err)
-		}
-	}()
-
+	// 立即返回成功响应，缓存清理工作在后台进行
 	ctx.JSON(http.StatusOK, gin.H{"message": "群组申请处理成功"})
+
+	// 后台并发处理所有的缓存操作
+	go func() {
+		// 用于协调缓存操作的WaitGroup
+		var cachewg sync.WaitGroup
+		cachewg.Add(3)
+
+		// 处理群组申请缓存
+		go func() {
+			defer cachewg.Done()
+			applicationCacheKey := fmt.Sprintf("GroupApplicationList:%d", group.OwnerID)
+
+			// 批量处理方式1: 使用管道清除整个列表并重新加载，如果列表很长更有效
+			ctx := context.Background() // 使用新的上下文
+			pipe := redisCli.Pipeline()
+			pipe.Del(ctx, applicationCacheKey)
+			if _, err := pipe.Exec(ctx); err != nil {
+				log.Printf("清除群组申请缓存错误: %v", err)
+			}
+
+			// 如果需要重新加载缓存，可以在这里查询并添加
+			// 这里省略了重新加载代码，实际使用时可以根据需求添加
+		}()
+
+		// 缓存群组成员关系
+		go func() {
+			defer cachewg.Done()
+			ctx := context.Background()
+			memberCacheKey := fmt.Sprintf("group_member:%d", req.GroupID)
+			memberCache, err := json.Marshal(groupMember)
+			if err != nil {
+				log.Printf("序列化群组成员错误: %v", err)
+				return
+			}
+
+			// 使用管道操作优化Redis访问
+			pipe := redisCli.Pipeline()
+			pipe.LPush(ctx, memberCacheKey, memberCache)
+			pipe.Expire(ctx, memberCacheKey, 7*24*time.Hour)
+			if _, err := pipe.Exec(ctx); err != nil {
+				log.Printf("缓存群组成员关系错误: %v", err)
+			}
+		}()
+
+		// 更新用户群组列表缓存
+		go func() {
+			defer cachewg.Done()
+			ctx := context.Background()
+			userGroupCacheKey := fmt.Sprintf("groupList:%d", req.UserID)
+			if err := redisCli.Del(ctx, userGroupCacheKey).Err(); err != nil {
+				log.Printf("删除用户群组缓存错误: %v", err)
+			}
+		}()
+
+		// 等待所有缓存操作完成
+		cachewg.Wait()
+		log.Printf("所有缓存操作已完成")
+	}()
 }
 
 // 删除过期的 FriendAdd 请求
 func DeleteExpiredFriendAdds() {
 	db := database.GetDB()
-	var expiredFriendAdds []request.FriendAdd
+	var expiredFriendAdds []model.FriendAdd
 
 	// 查询所有过期的请求
-	result := db.Where("status = ? AND created_at <= ?", request.Pending, time.Now().Add(-7*24*time.Hour)).Find(&expiredFriendAdds)
+	result := db.Where("status = ? AND created_at <= ?", model.Pending, time.Now().Add(-7*24*time.Hour)).Find(&expiredFriendAdds)
 	if result.Error != nil {
 		log.Printf("error: %v", result.Error.Error())
 		return
@@ -299,10 +337,10 @@ func DeleteExpiredFriendAdds() {
 // 删除过期的 GroupApplication 请求
 func DeleteExpiredGroupApplications() {
 	db := database.GetDB()
-	var expiredGroupApplications []request.GroupApplication
+	var expiredGroupApplications []model.GroupApplication
 
 	// 查询所有过期的请求
-	result := db.Where("status = ? AND created_at <= ?", request.Pending, time.Now().Add(-7*24*time.Hour)).Find(&expiredGroupApplications)
+	result := db.Where("status = ? AND created_at <= ?", model.Pending, time.Now().Add(-7*24*time.Hour)).Find(&expiredGroupApplications)
 	if result.Error != nil {
 		log.Printf("error: %v", result.Error.Error())
 		return
