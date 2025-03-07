@@ -28,32 +28,39 @@ func PushMessage(ctx context.Context, user model.User) {
 		log.Printf("Error 获取 %s 消息: %v", user.ID, err)
 		return
 	}
-
-	status, err := reidsClient.HGet(context.Background(), strconv.Itoa(int(user.ID)), "status").Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		log.Printf("Error checking user %s status: %v", strconv.Itoa(int(user.ID)), err)
-		return
-	}
-	if status == "online" {
-		targetIP, err := reidsClient.Get(ctx, strconv.Itoa(int(user.ID))).Result()
-		if err == redis.Nil {
-			log.Printf("Key does not exist")
-			return
-		} else if err != nil {
-			log.Printf("Error getting value: %v", err)
+	var retry int
+	for {
+		retry++
+		if retry > 10 {
 			return
 		}
-		queueName := fmt.Sprintf("message_queue" + targetIP) // 队列名，可以按需设置
-		for data := range datas {
-			err = reidsClient.LPush(ctx, queueName, data).Err()
-			if err != nil {
-				log.Printf("Error pushing message to Redis queue: %v", err)
+		status, err := reidsClient.HGet(context.Background(), strconv.Itoa(int(user.ID)), "status").Result()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			log.Printf("Error checking user %s status: %v", strconv.Itoa(int(user.ID)), err)
+			return
+		}
+		if status == "online" {
+			targetIP, err := reidsClient.Get(ctx, strconv.Itoa(int(user.ID))).Result()
+			if err == redis.Nil {
+				log.Printf("Key does not exist")
+				return
+			} else if err != nil {
+				log.Printf("Error getting value: %v", err)
 				return
 			}
+			queueName := fmt.Sprintf("message_queue" + targetIP) // 队列名，可以按需设置
+			for data := range datas {
+				err = reidsClient.LPush(ctx, queueName, data).Err()
+				if err != nil {
+					log.Printf("Error pushing message to Redis queue: %v", err)
+					return
+				}
+			}
+			return
+		} else {
+			time.Sleep(50 * time.Millisecond)
 		}
-		return
-	} else {
-		time.Sleep(50 * time.Millisecond)
+
 	}
 
 }
