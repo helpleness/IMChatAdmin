@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -135,6 +134,7 @@ func HandleFriendAdd(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "Request handled successfully"})
 }
 
+// 处理群组申请
 // HandleGroupApplication 处理群组申请
 func HandleGroupApplication(ctx *gin.Context) {
 	var req model.GroupApplication
@@ -142,9 +142,6 @@ func HandleGroupApplication(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	ID, _ := ctx.Get("userid")
-	UserID := ID.(uint)
-	req.UserID = int(UserID)
 
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
@@ -159,8 +156,17 @@ func HandleGroupApplication(ctx *gin.Context) {
 	var isMember bool
 
 	// 同时检查群组是否存在和用户是否已经是群组成员
-	wg.Add(2)
+	wg.Add(3)
 
+	go func() {
+		defer wg.Done()
+		// 检查用户是否存在
+		_, err := middleware.Isuserexist(ctx, req.UserID)
+		if err != nil {
+			errChan <- fmt.Errorf("userid err: %v", err)
+			return
+		}
+	}()
 	// 检查群组是否存在
 	go func() {
 		defer wg.Done()
@@ -251,65 +257,63 @@ func HandleGroupApplication(ctx *gin.Context) {
 		return
 	}
 
-	// 立即返回成功响应，缓存清理工作在后台进行
 	ctx.JSON(http.StatusOK, gin.H{"message": "群组申请处理成功"})
 
-	// 后台并发处理所有的缓存操作
+	// 缓存清理
 	go func() {
-		// 用于协调缓存操作的WaitGroup
-		var cachewg sync.WaitGroup
-		cachewg.Add(3)
+		// 删除群组申请缓存
+		applicationCacheKey := fmt.Sprintf("GroupaApplicationList:%d", group.OwnerID)
 
-		// 处理群组申请缓存
-		go func() {
-			defer cachewg.Done()
-			applicationCacheKey := fmt.Sprintf("GroupApplicationList:%d", group.OwnerID)
+		// 获取所有缓存项
+		originalRequests, err := redisCli.LRange(ctx, applicationCacheKey, 0, -1).Result()
+		if err != nil {
+			log.Printf("获取原始群组申请缓存错误: %v", err)
+			return
+		}
 
-			// 批量处理方式1: 使用管道清除整个列表并重新加载，如果列表很长更有效
-			ctx := context.Background() // 使用新的上下文
-			pipe := redisCli.Pipeline()
-			pipe.Del(ctx, applicationCacheKey)
-			if _, err := pipe.Exec(ctx); err != nil {
-				log.Printf("清除群组申请缓存错误: %v", err)
+		fmt.Printf("originalRequests: %v\n", applicationCacheKey)
+		fmt.Printf("originalRequests: %v\n", originalRequests)
+		// 批量删除匹配的申请
+		for _, originalRequest := range originalRequests {
+			var originalReq model.GroupApplication
+			if err := json.Unmarshal([]byte(originalRequest), &originalReq); err != nil {
+				log.Printf("解析原始群组申请错误: %v", err)
+				continue
 			}
 
-			// 如果需要重新加载缓存，可以在这里查询并添加
-			// 这里省略了重新加载代码，实际使用时可以根据需求添加
-		}()
-
-		// 缓存群组成员关系
-		go func() {
-			defer cachewg.Done()
-			ctx := context.Background()
-			memberCacheKey := fmt.Sprintf("group_member:%d", req.GroupID)
-			memberCache, err := json.Marshal(groupMember)
-			if err != nil {
-				log.Printf("序列化群组成员错误: %v", err)
-				return
+			// 检查是否是需要删除的请求
+			if originalReq.UserID == req.UserID && originalReq.GroupID == req.GroupID {
+				// 使用 LRem 删除匹配的请求
+				if delCount, err := redisCli.LRem(ctx, applicationCacheKey, 0, originalRequest).Result(); err != nil {
+					log.Printf("从缓存中删除群组申请错误: %v", err)
+				} else {
+					log.Printf("删除群组申请数量: %d", delCount)
+				}
 			}
+		}
 
-			// 使用管道操作优化Redis访问
-			pipe := redisCli.Pipeline()
-			pipe.LPush(ctx, memberCacheKey, memberCache)
-			pipe.Expire(ctx, memberCacheKey, 7*24*time.Hour)
-			if _, err := pipe.Exec(ctx); err != nil {
-				log.Printf("缓存群组成员关系错误: %v", err)
-			}
-		}()
+		// 将群组成员关系缓存到 Redis
+		memberCacheKey := fmt.Sprintf("group_member:%d", req.GroupID)
+		memberCache, err := json.Marshal(groupMember)
+		if err != nil {
+			log.Printf("序列化群组成员错误: %v", err)
+			return
+		}
 
-		// 更新用户群组列表缓存
-		go func() {
-			defer cachewg.Done()
-			ctx := context.Background()
-			userGroupCacheKey := fmt.Sprintf("groupList:%d", req.UserID)
-			if err := redisCli.Del(ctx, userGroupCacheKey).Err(); err != nil {
-				log.Printf("删除用户群组缓存错误: %v", err)
-			}
-		}()
+		// 使用管道操作
+		pipe := redisCli.Pipeline()
+		pipe.LPush(ctx, memberCacheKey, memberCache)
+		pipe.Expire(ctx, memberCacheKey, 7*24*time.Hour)
+		if _, err := pipe.Exec(ctx); err != nil {
+			log.Printf("缓存群组成员关系错误: %v", err)
+		}
 
-		// 等待所有缓存操作完成
-		cachewg.Wait()
-		log.Printf("所有缓存操作已完成")
+		// 更新用户的群组列表缓存
+		userGroupCacheKey := fmt.Sprintf("groupList:%d", req.UserID)
+		if err := redisCli.Del(ctx, userGroupCacheKey).Err(); err != nil {
+			log.Printf("删除用户群组缓存错误: %v", err)
+		}
+		log.Printf("缓存清理完成")
 	}()
 }
 
