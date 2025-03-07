@@ -20,10 +20,16 @@ func InitClusterClient() *redis.Client {
 	password := viper.GetString("redis.password")
 
 	RedisClient = redis.NewClient(&redis.Options{
-		Addr:     masteraddr, // redis服务ip:port
-		Password: password,   // redis的认证密码
-		DB:       0,          // 连接的database库
-		PoolSize: 100,        // 连接池
+		Addr:         masteraddr,             // redis服务ip:port
+		Password:     password,               // redis的认证密码
+		DB:           0,                      // 连接的database库
+		PoolSize:     100,                    // 连接池
+		MinIdleConns: 10,                     // 最小空闲连接数
+		DialTimeout:  500 * time.Millisecond, // 连接超时
+		ReadTimeout:  500 * time.Millisecond, // 读取超时
+		WriteTimeout: 500 * time.Millisecond, // 写入超时
+		PoolTimeout:  1 * time.Second,        // 连接池超时
+		MaxRetries:   3,                      // 命令执行失败时的最大重试次数
 	})
 	//defer func(RedisClient *redis.Client) {
 	//	err := RedisClient.Close()

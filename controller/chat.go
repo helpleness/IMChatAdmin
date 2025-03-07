@@ -412,6 +412,7 @@ func GroupApplicationRedis(ctx *gin.Context) {
 		return
 	}
 
+	req.OwnerID = group.OwnerID
 	// 检查是否已存在申请
 	if exists, err := checkExistingApplication(ctx, db, redisCli, req, group); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -509,7 +510,7 @@ func createGroupApplication(
 	}
 
 	// 缓存申请信息
-	cacheKey := "group_application:" + strconv.Itoa(group.OwnerID)
+	cacheKey := "GroupaApplicationList:" + strconv.Itoa(group.OwnerID)
 	applicationCacheMarshal, err := json.Marshal(req)
 	if err != nil {
 		tx.Rollback()
@@ -521,7 +522,7 @@ func createGroupApplication(
 		tx.Rollback()
 		return err
 	}
-	err = redisCli.Expire(ctx, cacheKey, 7*24/time.Hour).Err()
+	err = redisCli.Expire(ctx, cacheKey, 7*24*time.Hour).Err()
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -771,7 +772,7 @@ func GetPendingGroupApplications(ctx *gin.Context, UserID int) (error, []request
 	}
 
 	// 缓存未命中，从数据库中查询
-	applications, err = fetchApplicationsFromDatabase(ctx, db, UserID)
+	applications, err = fetchPendingApplicationsDirectly(ctx, db, UserID)
 	if err != nil {
 		return err, nil
 	}
@@ -811,87 +812,34 @@ func fetchApplicationsFromCache(
 	return applications, nil
 }
 
-// fetchApplicationsFromDatabase 从数据库获取申请列表
-func fetchApplicationsFromDatabase(
+// fetchPendingApplicationsDirectly 直接获取用户管理的群组的待处理申请
+func fetchPendingApplicationsDirectly(
 	ctx *gin.Context,
 	db *gorm.DB,
-	UserID int,
-) ([]request.GroupApplication, error) {
-	// 查询用户作为群主的群组
-	ownerGroups, err := fetchOwnerGroups(db, UserID)
-	if err != nil {
-		log.Printf("Error fetching owner groups: %v", err)
-		return nil, err
-	}
-
-	// 查询用户作为管理员的群组
-	adminGroups, err := fetchAdminGroups(db, UserID)
-	if err != nil {
-		log.Printf("Error fetching admin groups: %v", err)
-		return nil, err
-	}
-
-	// 合并并去重群组ID
-	groupIDs := mergeGroupIDs(ownerGroups, adminGroups)
-
-	// 查询待处理的群组申请
-	return fetchPendingApplications(db, groupIDs)
-}
-
-// fetchOwnerGroups 获取用户作为群主的群组
-func fetchOwnerGroups(db *gorm.DB, userID int) ([]model.Group, error) {
-	var ownerGroups []model.Group
-	result := db.Where("owner_id = ?", userID).Find(&ownerGroups)
-	return ownerGroups, result.Error
-}
-
-// fetchAdminGroups 获取用户作为管理员的群组
-func fetchAdminGroups(db *gorm.DB, userID int) ([]model.GroupMember, error) {
-	var adminGroups []model.GroupMember
-	result := db.Where("user_id = ? AND role = ?", userID, "admin").Find(&adminGroups)
-	return adminGroups, result.Error
-}
-
-// mergeGroupIDs 合并并去重群组ID
-func mergeGroupIDs(
-	ownerGroups []model.Group,
-	adminGroups []model.GroupMember,
-) []int {
-	groupIDs := make(map[int]bool)
-
-	for _, group := range ownerGroups {
-		groupIDs[group.GroupID] = true
-	}
-
-	for _, member := range adminGroups {
-		groupIDs[member.GroupID] = true
-	}
-
-	// 转换为切片
-	result := make([]int, 0, len(groupIDs))
-	for groupID := range groupIDs {
-		result = append(result, groupID)
-	}
-
-	return result
-}
-
-// fetchPendingApplications 获取指定群组的待处理申请
-func fetchPendingApplications(
-	db *gorm.DB,
-	groupIDs []int,
+	userID int,
 ) ([]request.GroupApplication, error) {
 	var applications []request.GroupApplication
+	oneWeekAgo := time.Now().AddDate(0, 0, -7).Format("2006-01-02 15:04:05")
 
-	// 查询7天内的待处理申请
-	result := db.Where(
-		"group_id IN ? AND status = ? AND created_at > ?",
-		groupIDs,
-		request.Pending,
-		time.Now().Add(-7*24*time.Hour),
-	).Find(&applications)
+	// 使用子查询和JOIN一次性获取结果
+	query := `
+        SELECT ga.*
+        FROM group_applications ga
+        INNER JOIN (
+            SELECT DISTINCT gm.group_id
+            FROM group_members gm
+            WHERE gm.user_id = ? AND (gm.role = 'admin' OR gm.role = 'owner')
+        ) AS managed_groups ON ga.group_id = managed_groups.group_id
+        WHERE ga.status = 0 AND ga.created_at > ?
+        ORDER BY ga.created_at DESC
+    `
 
-	return applications, result.Error
+	if err := db.Raw(query, userID, oneWeekAgo).Scan(&applications).Error; err != nil {
+		log.Printf("查询待处理申请错误: %v", err)
+		return nil, err
+	}
+
+	return applications, nil
 }
 
 // cacheApplications 缓存申请列表
@@ -901,6 +849,7 @@ func cacheApplications(
 	cacheKey string,
 	applications []request.GroupApplication,
 ) error {
+	startTime := time.Now() // 记录开始时间
 	// 清除旧缓存
 	if err := redisCli.Del(ctx, cacheKey).Err(); err != nil {
 		return err
@@ -920,5 +869,12 @@ func cacheApplications(
 	}
 
 	// 设置缓存过期时间
-	return redisCli.Expire(ctx, cacheKey, 7*24*time.Hour).Err()
+	expireStart := time.Now()
+	err := redisCli.Expire(ctx, cacheKey, 7*24*time.Hour).Err()
+	log.Printf("Expire操作耗时: %v", time.Since(expireStart))
+
+	// 记录总耗时
+	log.Printf("cacheApplications函数总耗时: %v", time.Since(startTime))
+
+	return err
 }

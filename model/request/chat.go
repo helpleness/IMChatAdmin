@@ -37,4 +37,5 @@ type GroupApplication struct {
 	GroupID int           `gorm:"type:int;not null" json:"group_id"` // 群组的ID
 	Message string        `gorm:"type:text" json:"message"`          // 申请加入群组时的附加消息
 	Status  RequestStatus `gorm:"type:int;default:0" json:"status"`  // 请求的处理状态
+	OwnerID int           `gorm:"not null"`                          // 群主的用户ID
 }
