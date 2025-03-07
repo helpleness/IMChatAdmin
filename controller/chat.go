@@ -99,6 +99,7 @@ func FriendAdd(ctx *gin.Context) {
 
 // 旁路缓存群聊创建
 func GroupCreated(ctx *gin.Context) {
+	var members []model.GroupMember
 	var req request.GroupCreated
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -155,6 +156,7 @@ func GroupCreated(ctx *gin.Context) {
 	if err != nil {
 		log.Printf("Error caching group member: %v", err)
 	}
+	members = append(members, groupMember)
 
 	// 添加初始成员
 	for _, memberID := range req.InitialMembers {
@@ -183,8 +185,10 @@ func GroupCreated(ctx *gin.Context) {
 		if err != nil {
 			log.Printf("Error caching group member: %v", err)
 		}
+		members = append(members, groupMember)
 	}
 
+	cacheGroupMembers(ctx, redisCli, group.GroupID, members)
 	// 假设我们已经创建了群聊
 	ctx.JSON(http.StatusOK, gin.H{"message": "Group created successfully", "group_id": group.GroupID})
 }

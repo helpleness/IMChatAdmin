@@ -137,6 +137,7 @@ func HandleFriendAdd(ctx *gin.Context) {
 // 处理群组申请
 // HandleGroupApplication 处理群组申请
 func HandleGroupApplication(ctx *gin.Context) {
+
 	var req model.GroupApplication
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -199,6 +200,12 @@ func HandleGroupApplication(ctx *gin.Context) {
 	wg.Wait()
 	close(errChan)
 
+	ID, _ := ctx.Get("userid")
+	UserID := ID.(uint)
+
+	if int(UserID) == group.OwnerID {
+
+	}
 	// 检查是否有错误
 	for err := range errChan {
 		ctx.JSON(200, gin.H{"error": err.Error()})

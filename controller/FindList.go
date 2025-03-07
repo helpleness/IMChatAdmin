@@ -1,11 +1,13 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/helpleness/IMChatAdmin/database"
 	"github.com/helpleness/IMChatAdmin/model"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"log"
 	"net/http"
@@ -441,4 +443,182 @@ func GetFriendsHandler(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"friends": friendsResponse,
 	})
+}
+
+// GetGroupMembers 获取群成员列表的接口
+func GetGroupMembers(ctx *gin.Context) {
+	// 获取URL参数中的群组ID
+	groupIDStr := ctx.Query("group_id")
+	if groupIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "群组ID不能为空"})
+		return
+	}
+
+	groupID, err := strconv.Atoi(groupIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组ID"})
+		return
+	}
+
+	// 获取Redis和数据库连接
+	redisCli := database.GetRedisClient()
+	db := database.GetDB()
+
+	// 首先尝试从缓存获取群成员
+	members, err := getGroupMembersFromCache(ctx, redisCli, groupID)
+
+	// 如果缓存中没有数据或发生错误，则从数据库获取
+	if err != nil || len(members) == 0 {
+		members, err = getGroupMembersFromDB(ctx, db, groupID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取群成员失败: %v", err)})
+			return
+		}
+
+		// 将数据库中获取的成员信息缓存到Redis
+		go cacheGroupMembers(context.Background(), redisCli, groupID, members)
+	}
+
+	// 返回结果
+	ctx.JSON(http.StatusOK, gin.H{
+		"group_id": groupID,
+		"count":    len(members),
+		"members":  members,
+	})
+}
+
+// getGroupMembersFromCache 从Redis缓存中获取群成员
+func getGroupMembersFromCache(ctx context.Context, redisCli *redis.Client, groupID int) ([]model.GroupMember, error) {
+	cacheKey := fmt.Sprintf("group_member:%d", groupID)
+
+	// 从Redis列表中获取所有成员数据
+	cachedData, err := redisCli.LRange(ctx, cacheKey, 0, -1).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(cachedData) == 0 {
+		return nil, nil
+	}
+
+	var members []model.GroupMember
+
+	// 反序列化每个成员数据
+	for _, data := range cachedData {
+		var member model.GroupMember
+		if err := json.Unmarshal([]byte(data), &member); err != nil {
+			log.Printf("解析群成员缓存错误: %v", err)
+			continue
+		}
+		members = append(members, member)
+	}
+
+	return members, nil
+}
+
+// getGroupMembersFromDB 从数据库中获取群成员
+func getGroupMembersFromDB(ctx context.Context, db *gorm.DB, groupID int) ([]model.GroupMember, error) {
+	startTime := time.Now()
+
+	var members []model.GroupMember
+
+	result := db.Where("group_id = ?", groupID).Find(&members)
+
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	log.Printf("从数据库获取群成员耗时: %v", time.Since(startTime))
+
+	return members, nil
+}
+
+// cacheGroupMembers 将群成员信息缓存到Redis
+func cacheGroupMembers(ctx context.Context, redisCli *redis.Client, groupID int, members []model.GroupMember) {
+	startTime := time.Now()
+	cacheKey := fmt.Sprintf("group_member:%d", groupID)
+
+	// 使用管道操作批量处理
+	pipe := redisCli.Pipeline()
+
+	// 首先删除旧缓存
+	pipe.Del(ctx, cacheKey)
+
+	// 添加所有成员到缓存
+	for _, member := range members {
+		memberJSON, err := json.Marshal(member)
+		if err != nil {
+			log.Printf("序列化群成员错误: %v", err)
+			continue
+		}
+		pipe.LPush(ctx, cacheKey, memberJSON)
+	}
+
+	// 设置过期时间为7天
+	pipe.Expire(ctx, cacheKey, 7*24*time.Hour)
+
+	// 执行所有命令
+	if _, err := pipe.Exec(ctx); err != nil {
+		log.Printf("缓存群成员错误: %v", err)
+	} else {
+		log.Printf("缓存群成员成功, 耗时: %v, 成员数: %d", time.Since(startTime), len(members))
+	}
+}
+
+// 优化版：GetGroupMembersV2使用聚合结果集的缓存策略
+func GetGroupMembersV2(ctx *gin.Context) {
+	// 获取URL参数中的群组ID
+	groupIDStr := ctx.Query("group_id")
+	if groupIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "群组ID不能为空"})
+		return
+	}
+
+	groupID, err := strconv.Atoi(groupIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "无效的群组ID"})
+		return
+	}
+
+	// 获取Redis和数据库连接
+	redisCli := database.GetRedisClient()
+	db := database.GetDB()
+
+	// 缓存键
+	cacheKey := fmt.Sprintf("group_members_v2:%d", groupID)
+
+	// 尝试从缓存获取
+	cachedData, err := redisCli.Get(ctx, cacheKey).Result()
+	if err == nil {
+		// 缓存命中
+		var response gin.H
+		if err := json.Unmarshal([]byte(cachedData), &response); err == nil {
+			ctx.JSON(http.StatusOK, response)
+			return
+		}
+	}
+
+	// 缓存未命中，从数据库获取
+	var members []model.GroupMember
+	if err := db.Where("group_id = ?", groupID).Find(&members).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取群成员失败: %v", err)})
+		return
+	}
+
+	// 构建响应
+	response := gin.H{
+		"group_id": groupID,
+		"count":    len(members),
+		"members":  members,
+	}
+
+	// 将响应缓存到Redis (10分钟过期)
+	go func() {
+		if responseData, err := json.Marshal(response); err == nil {
+			redisCli.Set(context.Background(), cacheKey, responseData, 10*time.Minute)
+		}
+	}()
+
+	// 返回结果
+	ctx.JSON(http.StatusOK, response)
 }
