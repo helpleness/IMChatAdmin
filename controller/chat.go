@@ -19,50 +19,83 @@ import (
 )
 
 func PushMessage(ctx context.Context, user model.User) {
+	redisClient := database.GetRedisClient()
+	userIDStr := strconv.Itoa(int(user.ID))
 
-	time.Sleep(50 * time.Millisecond)
-	reidsClient := database.GetRedisClient()
-	key := fmt.Sprintf("messages:%s", user.ID)
-	datas, err := reidsClient.LRange(ctx, key, 0, -1).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		log.Printf("Error 获取 %s 消息: %v", user.ID, err)
+	// 消息队列键名
+	messageKey := fmt.Sprintf("messages:%s", userIDStr)
+
+	// 获取待发送消息
+	messages, err := redisClient.LRange(ctx, messageKey, 0, -1).Result()
+	if err != nil {
+		log.Printf("获取用户 %s 消息失败: %v", userIDStr, err)
 		return
 	}
-	var retry int
-	for {
-		retry++
-		if retry > 10 {
-			return
-		}
-		status, err := reidsClient.HGet(context.Background(), strconv.Itoa(int(user.ID)), "status").Result()
-		if err != nil && !errors.Is(err, redis.Nil) {
-			log.Printf("Error checking user %s status: %v", strconv.Itoa(int(user.ID)), err)
-			return
-		}
-		if status == "online" {
-			targetIP, err := reidsClient.Get(ctx, strconv.Itoa(int(user.ID))).Result()
-			if err == redis.Nil {
-				log.Printf("Key does not exist")
-				return
-			} else if err != nil {
-				log.Printf("Error getting value: %v", err)
-				return
-			}
-			queueName := fmt.Sprintf("message_queue" + targetIP) // 队列名，可以按需设置
-			for data := range datas {
-				err = reidsClient.LPush(ctx, queueName, data).Err()
-				if err != nil {
-					log.Printf("Error pushing message to Redis queue: %v", err)
-					return
-				}
-			}
-			return
-		} else {
-			time.Sleep(50 * time.Millisecond)
-		}
 
+	if len(messages) == 0 {
+		log.Printf("用户 %s 没有待发送消息", userIDStr)
+		return
 	}
 
+	// 状态键
+	statusKey := fmt.Sprintf("%s", userIDStr)
+
+	var retry int
+	maxRetries := 10
+	retryDelay := 100 * time.Millisecond
+
+	for retry < maxRetries {
+		// 检查用户是否在线
+		status, err := redisClient.HGet(ctx, statusKey, "status").Result()
+		if err == redis.Nil {
+			log.Printf("用户 %s 状态未设置", userIDStr)
+			time.Sleep(retryDelay)
+			retry++
+			continue
+		} else if err != nil {
+			log.Printf("获取用户 %s 状态出错: %v", userIDStr, err)
+			return
+		}
+
+		if status == "online" {
+			// 获取用户IP
+			ipKey := fmt.Sprintf("ip%s", userIDStr)
+			targetIP, err := redisClient.Get(ctx, ipKey).Result()
+			if err == redis.Nil {
+				log.Printf("用户 %s IP未设置", userIDStr)
+				return
+			} else if err != nil {
+				log.Printf("获取用户 %s IP出错: %v", userIDStr, err)
+				return
+			}
+
+			// 推送消息到目标队列
+			queueName := fmt.Sprintf("message_queue%s", targetIP)
+			pipe := redisClient.Pipeline()
+
+			for _, msg := range messages {
+				log.Printf("推送消息到队列 %s: %s", queueName, msg)
+				pipe.LPush(ctx, queueName, msg)
+			}
+
+			_, err = pipe.Exec(ctx)
+			if err != nil {
+				log.Printf("批量推送消息失败: %v", err)
+				return
+			}
+
+			// 成功后可以选择清除原消息队列
+			redisClient.Del(ctx, messageKey)
+			log.Printf("成功推送 %d 条消息到用户 %s", len(messages), userIDStr)
+			return
+		}
+
+		log.Printf("用户 %s 不在线，等待重试 (%d/%d)", userIDStr, retry+1, maxRetries)
+		time.Sleep(retryDelay)
+		retry++
+	}
+
+	log.Printf("推送消息失败：用户 %s 在最大重试次数内未上线", userIDStr)
 }
 
 // 旁路缓存好友添加和处理
