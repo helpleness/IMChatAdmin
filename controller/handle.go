@@ -30,7 +30,7 @@ func HandleFriendAdd(ctx *gin.Context) {
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
 	var err error
-	_, err = middleware.Isuserexist(ctx, req.FriendID)
+	_, err = middleware.Isuserexist(ctx, req.FriendID, db, redisCli)
 	if err != nil {
 		ctx.JSON(200, gin.H{"error": "friendid err"})
 		return
@@ -162,7 +162,7 @@ func HandleGroupApplication(ctx *gin.Context) {
 	go func() {
 		defer wg.Done()
 		// 检查用户是否存在
-		_, err := middleware.Isuserexist(ctx, req.UserID)
+		_, err := middleware.Isuserexist(ctx, req.UserID, db, redisCli)
 		if err != nil {
 			ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			errChan <- fmt.Errorf("userid err: %v", err)

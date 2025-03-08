@@ -115,7 +115,8 @@ func FriendAdd(ctx *gin.Context) {
 	}
 	// 查找数据库中是否存在这两个ID
 	db := database.GetDB()
-	_, err := middleware.Isuserexist(ctx, req.FriendID)
+	redisCli := database.GetRedisClient()
+	_, err := middleware.Isuserexist(ctx, req.FriendID, db, redisCli)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -124,7 +125,7 @@ func FriendAdd(ctx *gin.Context) {
 	req.Status = model.Pending // 设置请求状态为待处理
 	db.Create(&req)
 	// 缓存到 Redis
-	redisCli := database.GetRedisClient()
+
 	cacheKey := "friend_request:" + strconv.Itoa(req.FriendID)
 	reqMarshal, _ := json.Marshal(req)
 	pipe := redisCli.Pipeline()
@@ -201,7 +202,7 @@ func GroupCreated(ctx *gin.Context) {
 
 	// 添加初始成员
 	for _, memberID := range req.InitialMembers {
-		_, err := middleware.Isuserexist(ctx, memberID)
+		_, err := middleware.Isuserexist(ctx, memberID, db, redisCli)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err})
 			return

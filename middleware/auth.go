@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/helpleness/IMChatAdmin/database"
 	"github.com/helpleness/IMChatAdmin/model"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"log"
 	"net/http"
@@ -15,9 +16,8 @@ import (
 	"time"
 )
 
-func Isuserexist(ctx context.Context, UserID int) (model.User, error) {
-	db := database.GetDB()
-	redisCli := database.GetRedisClient()
+func Isuserexist(ctx context.Context, UserID int, db *gorm.DB, redisCli *redis.Client) (model.User, error) {
+
 	// 查找数据库中是否存在用户
 	cacheKey := "user:" + strconv.Itoa(UserID)
 	userCache, err := redisCli.Get(ctx, cacheKey).Result()
@@ -77,7 +77,9 @@ func AuthMiddleWare() gin.HandlerFunc {
 		//DB := database.GetDB()
 		var user model.User
 		//DB.Table("users").Where("id = ?", userID).First(&user)
-		user, err = Isuserexist(ctx, int(userID))
+		db := database.GetDB()
+		redisCli := database.GetRedisClient()
+		user, err = Isuserexist(ctx, int(userID), db, redisCli)
 		if err != nil {
 			ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
