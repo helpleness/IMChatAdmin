@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/gin-gonic/gin"
@@ -14,7 +15,7 @@ import (
 	"time"
 )
 
-func Isuserexist(ctx *gin.Context, UserID int) (model.User, error) {
+func Isuserexist(ctx context.Context, UserID int) (model.User, error) {
 	db := database.GetDB()
 	redisCli := database.GetRedisClient()
 	// 查找数据库中是否存在用户
@@ -26,17 +27,17 @@ func Isuserexist(ctx *gin.Context, UserID int) (model.User, error) {
 		// 缓存命中，解析缓存数据
 		if err := json.Unmarshal([]byte(userCache), &user); err != nil {
 			log.Printf("Error unmarshalling user from cache: %v", err)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling user from cache"})
+			//ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Error unmarshalling user from cache"})
 			return user, err
 		}
 	} else {
 		// 缓存未命中，从数据库中查询
 		if result := db.Table("users").Where("id =?", UserID).First(&user); result.Error != nil {
 			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-				ctx.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+				//ctx.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 				return user, err
 			}
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+			//ctx.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 			return user, err
 		}
 
@@ -78,6 +79,7 @@ func AuthMiddleWare() gin.HandlerFunc {
 		//DB.Table("users").Where("id = ?", userID).First(&user)
 		user, err = Isuserexist(ctx, int(userID))
 		if err != nil {
+			ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
 		if user.ID == 0 {

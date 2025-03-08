@@ -164,6 +164,7 @@ func HandleGroupApplication(ctx *gin.Context) {
 		// 检查用户是否存在
 		_, err := middleware.Isuserexist(ctx, req.UserID)
 		if err != nil {
+			ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			errChan <- fmt.Errorf("userid err: %v", err)
 			return
 		}

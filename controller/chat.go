@@ -117,6 +117,7 @@ func FriendAdd(ctx *gin.Context) {
 	db := database.GetDB()
 	_, err := middleware.Isuserexist(ctx, req.FriendID)
 	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 	// 发送好友请求
