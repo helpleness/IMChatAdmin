@@ -128,7 +128,7 @@ func Login(ctx *gin.Context) {
 func isUserExits(db *gorm.DB, username string) (model.User, bool) {
 	var user model.User
 	redisCli := database.GetRedisClient()
-	cacheKey := "user:" + username
+	cacheKey := "username:" + username
 	result, err := redisCli.Get(context.Background(), cacheKey).Result()
 	if err == nil {
 		if err := json.Unmarshal([]byte(result), &user); err != nil {
