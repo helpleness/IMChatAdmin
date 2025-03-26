@@ -29,7 +29,7 @@ func Register(ctx *gin.Context) {
 		response.Fail(ctx, 400, "password is too short", "password is too short")
 		return
 	}
-	_, exist := isUserExits(DB, username)
+	user, exist := isUserExits(DB, username)
 	if exist {
 		response.Success(ctx, 400, "user exits", "user exits")
 		return
@@ -55,8 +55,6 @@ func Register(ctx *gin.Context) {
 		log.Printf("Error caching user: %v", err)
 	}
 	//写入成功。注册成功。
-	var user model.User
-	DB.Table("users").Where("username = ?", username).First(&user)
 
 	token, err := middleware.ReleaseToken(user)
 	if err != nil {
@@ -87,8 +85,13 @@ func Login(ctx *gin.Context) {
 		return
 	}
 	//创建用户名变量，在数据库中查找获取到的用户名
-	var user model.User
-	user, _ = isUserExits(DB, username)
+	//var user model.User
+	user, exist := isUserExits(DB, username)
+
+	if !exist {
+		response.Success(ctx, 400, "user no exits", "user no exits")
+		return
+	}
 	//DB.Table("users").Where("username = ?", username).First(&user)
 	//找不到用户时：
 	if user.ID == 0 {
