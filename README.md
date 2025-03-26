@@ -1,4 +1,3 @@
-# IMChatAdmin
 # IM聊天室系统
 
 ![image.jpg](image.jpg)
