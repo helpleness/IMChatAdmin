@@ -32,7 +32,7 @@ func HandleFriendAdd(ctx *gin.Context) {
 	var err error
 	_, err = middleware.Isuserexist(ctx, req.FriendID, db, redisCli)
 	if err != nil {
-		ctx.JSON(200, gin.H{"error": "friendid err"})
+		ctx.JSON(200, gin.H{"error": "添加的用户不存在"})
 		return
 	}
 	isfriendsexist, err := IsFriends(ctx, req.UserID, req.FriendID)

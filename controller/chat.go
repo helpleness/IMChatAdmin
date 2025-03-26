@@ -335,7 +335,7 @@ func GroupAddRedis(ctx *gin.Context) {
 			continue
 		}
 		if existingMember.UserID == req.UserID {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "User is already a member of the group"})
+			ctx.JSON(http.StatusOK, gin.H{"msg": "User is already a member of the group"})
 			return
 		}
 	}
@@ -343,7 +343,7 @@ func GroupAddRedis(ctx *gin.Context) {
 	// 如果缓存中没有数据，从数据库中查询
 	if len(members) == 0 {
 		if result := db.Where("group_id = ? AND user_id = ?", req.GroupID, req.UserID).First(&existingMember).Error; result == nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "User is already a member of the group"})
+			ctx.JSON(http.StatusOK, gin.H{"msg": "User is already a member of the group"})
 			return
 		}
 	}
@@ -464,7 +464,7 @@ func GroupApplicationRedis(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	} else if exists {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "您已提交过申请"})
+		ctx.JSON(http.StatusOK, gin.H{"msg": "您已提交过申请"})
 		return
 	}
 
@@ -492,7 +492,7 @@ func checkGroupExistence(ctx *gin.Context, groupID int) (*model.Group, error) {
 	var group model.Group
 	if err := db.First(&group, groupID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "群组不存在"})
+			ctx.JSON(http.StatusOK, gin.H{"error": "群组不存在"})
 			return nil, err
 		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "群组查询失败"})
