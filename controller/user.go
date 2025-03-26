@@ -137,11 +137,12 @@ func isUserExits(db *gorm.DB, username string) (model.User, bool) {
 		}
 		return user, user.ID != 0
 	} else {
-		db.Table("users").Where("username = ?", username).First(&user)
 		userCacheMarshal, _ := json.Marshal(user)
 		if err := redisCli.Set(context.Background(), cacheKey, userCacheMarshal, 0).Err(); err != nil {
 			log.Printf("Error caching user: %v", err)
 		}
+		db.Table("users").Where("username = ?", username).First(&user)
+
 	}
 
 	return user, user.ID != 0

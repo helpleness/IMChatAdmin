@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 )
 
 func Isuserexist(ctx context.Context, UserID int, db *gorm.DB, redisCli *redis.Client) (model.User, error) {
@@ -43,7 +42,7 @@ func Isuserexist(ctx context.Context, UserID int, db *gorm.DB, redisCli *redis.C
 
 		// 缓存用户信息
 		userCacheMarshal, _ := json.Marshal(user)
-		if err := redisCli.Set(ctx, cacheKey, userCacheMarshal, 7*24*time.Hour).Err(); err != nil {
+		if err := redisCli.Set(ctx, cacheKey, userCacheMarshal, 0).Err(); err != nil {
 			log.Printf("Error caching user: %v", err)
 		}
 	}
