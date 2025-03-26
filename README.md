@@ -81,7 +81,7 @@ RPC端利用消息队列解决分布式架构下的消息传递问题：
 
 可通过导入Postman集合快速了解系统API：
 
-[IM.postman_collection.json](/config/IM.postman_collection(4).json)
+[IM.postman_collection.json](config/IM.postman_collection(4).json)
 
 ### 部署建议
 
