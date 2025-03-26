@@ -48,9 +48,10 @@ func Register(ctx *gin.Context) {
 	}
 	//把用户信息写入数据库中
 	DB.Create(&newUser)
+	DB.Table("users").Where("username = ?", username).First(&user)
 	redisCli := database.GetRedisClient()
-	cacheKey := "user:" + strconv.Itoa(int(newUser.ID))
-	userCacheMarshal, _ := json.Marshal(newUser)
+	cacheKey := "user:" + strconv.Itoa(int(user.ID))
+	userCacheMarshal, _ := json.Marshal(user)
 	if err := redisCli.Set(ctx, cacheKey, userCacheMarshal, 0).Err(); err != nil {
 		log.Printf("Error caching user: %v", err)
 	}
@@ -140,12 +141,13 @@ func isUserExits(db *gorm.DB, username string) (model.User, bool) {
 		}
 		return user, user.ID != 0
 	} else {
-		userCacheMarshal, _ := json.Marshal(user)
-		if err := redisCli.Set(context.Background(), cacheKey, userCacheMarshal, 0).Err(); err != nil {
-			log.Printf("Error caching user: %v", err)
-		}
 		db.Table("users").Where("username = ?", username).First(&user)
-
+		if user.ID != 0 {
+			userCacheMarshal, _ := json.Marshal(user)
+			if err := redisCli.Set(context.Background(), cacheKey, userCacheMarshal, 0).Err(); err != nil {
+				log.Printf("Error caching user: %v", err)
+			}
+		}
 	}
 
 	return user, user.ID != 0
