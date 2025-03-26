@@ -1,7 +1,8 @@
 # IMChatAdmin
 # IM聊天室系统
 
-![微信图片_20250326091302.jpg](attachment:c1c9a961-792c-49c5-877f-3e395bb1ca90:微信图片_20250326091302.jpg)
+![image.jpg](image.jpg)
+
 
 本IM聊天室项目采用微服务架构设计，分为Service层和RPC微服务层，实现了高性能、高可用的即时通讯系统。
 
@@ -80,7 +81,7 @@ RPC端利用消息队列解决分布式架构下的消息传递问题：
 
 可通过导入Postman集合快速了解系统API：
 
-[IM.postman_collection.json](attachment:c73ba2f6-96f9-4eea-b94c-40df25702746:IM.postman_collection(4).json)
+[IM.postman_collection.json](/config/IM.postman_collection(4).json)
 
 ### 部署建议
 
