@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/gin-gonic/gin"
 	"github.com/helpleness/IMChatAdmin/database"
@@ -12,7 +13,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"time"
 )
 
 // 注册函数
@@ -29,7 +29,8 @@ func Register(ctx *gin.Context) {
 		response.Fail(ctx, 400, "password is too short", "password is too short")
 		return
 	}
-	if isUserExits(DB, username) {
+	_, exist := isUserExits(DB, username)
+	if exist {
 		response.Success(ctx, 400, "user exits", "user exits")
 		return
 	}
@@ -50,7 +51,7 @@ func Register(ctx *gin.Context) {
 	redisCli := database.GetRedisClient()
 	cacheKey := "user:" + strconv.Itoa(int(newUser.ID))
 	userCacheMarshal, _ := json.Marshal(newUser)
-	if err := redisCli.Set(ctx, cacheKey, userCacheMarshal, 7*24*time.Hour).Err(); err != nil {
+	if err := redisCli.Set(ctx, cacheKey, userCacheMarshal, 0).Err(); err != nil {
 		log.Printf("Error caching user: %v", err)
 	}
 	//写入成功。注册成功。
@@ -87,7 +88,8 @@ func Login(ctx *gin.Context) {
 	}
 	//创建用户名变量，在数据库中查找获取到的用户名
 	var user model.User
-	DB.Table("users").Where("username = ?", username).First(&user)
+	user, _ = isUserExits(DB, username)
+	//DB.Table("users").Where("username = ?", username).First(&user)
 	//找不到用户时：
 	if user.ID == 0 {
 		response.Fail(ctx, 400, "user exits", "user exits")
@@ -116,17 +118,33 @@ func Login(ctx *gin.Context) {
 	// 查找数据库中是否存在用户
 	cacheKey := "user:" + strconv.Itoa(int(user.ID))
 	userCache, _ := json.Marshal(user)
-	if err := redisCli.Set(ctx, cacheKey, userCache, 7*24*time.Hour).Err(); err != nil {
+	if err := redisCli.Set(ctx, cacheKey, userCache, 0).Err(); err != nil {
 		log.Printf("Error caching group: %v", err)
 	}
 	return
 }
 
 // 查找用户名是否存在的函数
-func isUserExits(db *gorm.DB, username string) bool {
+func isUserExits(db *gorm.DB, username string) (model.User, bool) {
 	var user model.User
-	db.Table("users").Where("username = ?", username).First(&user)
-	return user.ID != 0
+	redisCli := database.GetRedisClient()
+	cacheKey := "user:" + username
+	result, err := redisCli.Get(context.Background(), cacheKey).Result()
+	if err == nil {
+		if err := json.Unmarshal([]byte(result), &user); err != nil {
+			log.Printf("Error unmarshalling user from cache: %v", err)
+			return user, false
+		}
+		return user, user.ID != 0
+	} else {
+		db.Table("users").Where("username = ?", username).First(&user)
+		userCacheMarshal, _ := json.Marshal(user)
+		if err := redisCli.Set(context.Background(), cacheKey, userCacheMarshal, 0).Err(); err != nil {
+			log.Printf("Error caching user: %v", err)
+		}
+	}
+
+	return user, user.ID != 0
 }
 
 func Userinfo(ctx *gin.Context) {
