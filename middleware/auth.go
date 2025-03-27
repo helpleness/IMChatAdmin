@@ -81,6 +81,7 @@ func AuthMiddleWare() gin.HandlerFunc {
 		user, err = Isuserexist(ctx, int(userID), db, redisCli)
 		if err != nil {
 			ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			ctx.Abort()
 			return
 		}
 		if user.ID == 0 {
